@@ -154,7 +154,7 @@ def render_page(
 
 def main() -> None:
     project_root = Path(__file__).resolve().parent
-    extract_root = (project_root / "../extracted/book-content-B0CPWQZNQB").resolve()
+    extract_root = (project_root / "../kindle-api/extracted/book-content-B0CPWQZNQB").resolve()
     output_dir = project_root / "pages"
     output_path = render_page(extract_root, output_dir, page_index=0)
     print(f"Rendered page to {output_path}")

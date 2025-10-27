@@ -171,7 +171,7 @@ def render_glyph(
 
 def main() -> None:
     project_root = Path(__file__).resolve().parent
-    extract_root = Path("../extracted/book-content-B0CPWQZNQB").resolve()
+    extract_root = (project_root / "../kindle-api/extracted/book-content-B0CPWQZNQB").resolve()
     glyphs_path = extract_root / "glyphs.json"
     if not glyphs_path.exists():
         raise FileNotFoundError(f"glyphs.json not found at {glyphs_path}")
