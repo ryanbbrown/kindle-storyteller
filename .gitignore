@@ -1,0 +1,79 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+ENV/
+env/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+dist/
+dist-ssr/
+*.local
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/dist/
+TLS_Client_API
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Images (generated/extracted)
+*.png
+*.jpg
+*.jpeg
+*.gif
+
+# Environment files
+*.env
+.env.*
+!.env.example
+
+# Config files (keep only dist versions)
+config.*.yml
+!config.dist.yml
+
+# Kindle book extraction outputs
+output/
+extracted/
+archive/
+*.tar
+*.html
+
+# Build artifacts
+build/
+*.local
