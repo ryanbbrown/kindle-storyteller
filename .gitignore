@@ -20,8 +20,10 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 dist/
+**/dist/
 dist-ssr/
 *.local
+**/node_modules/
 
 # Go
 *.exe
@@ -73,7 +75,15 @@ extracted/
 archive/
 *.tar
 *.html
+server/data/*
+!server/data/.gitkeep
+!server/data/books/
+server/data/books/*
+!server/data/books/.gitkeep
 
 # Build artifacts
 build/
 *.local
+
+
+prompts/
