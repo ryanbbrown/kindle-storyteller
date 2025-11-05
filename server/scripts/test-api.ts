@@ -95,17 +95,12 @@ async function main() {
     }
 
     const content = contentResponse.data as {
-      textLength: number;
-      textPreview: string;
-      cached: boolean;
+      chunkId: string;
     };
 
-    console.log(
-      `Content fetched. Stored text length=${content.textLength}, cached=${content.cached}`
-    );
-    console.log("Preview:\n" + content.textPreview.slice(0, 200));
+    console.log(`Content fetched for chunk ${content.chunkId}`);
 
-    console.log("\nRunning glyph pipeline...\n");
+    console.log("\nRunning OCR pipeline...\n");
     const pipelineResponse = await fetchJson(
       `${API_BASE_URL}/books/${encodeURIComponent(target.asin)}/ocr`,
       {
@@ -114,33 +109,38 @@ async function main() {
           Authorization: `Bearer ${sessionId}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ maxPages: 2 }),
+        body: JSON.stringify({
+          startingPosition: 2792593,
+          maxPages: 2,
+        }),
       }
     );
 
     if (pipelineResponse.status >= 400) {
-      console.error("Glyph pipeline failed:", pipelineResponse.data);
+      console.error("OCR pipeline failed:", pipelineResponse.data);
       process.exit(1);
     }
 
     const pipeline = pipelineResponse.data as {
+      chunkId: string;
       totalPages: number;
       processedPages: number;
-      pages: Array<{ index: number; png: string; text_path: string | null }>;
+      pages: Array<{ index: number; png: string }>;
       combinedTextPath: string | null;
       ocrEnabled: boolean;
-      cached: boolean;
     };
 
     console.log(
-      `Glyph pipeline processed ${pipeline.processedPages}/${pipeline.totalPages} pages (cached=${pipeline.cached})`
+      `OCR pipeline processed ${pipeline.processedPages}/${pipeline.totalPages} pages for chunk ${pipeline.chunkId}`
     );
     console.log("OCR enabled:", pipeline.ocrEnabled);
     console.log("First page output:", pipeline.pages[0]);
 
     console.log("\nFetching text segment...\n");
     const textResponse = await fetchJson(
-      `${API_BASE_URL}/books/${encodeURIComponent(target.asin)}/text?start=0&length=500`,
+      `${API_BASE_URL}/books/${encodeURIComponent(target.asin)}/text?start=0&length=500&chunkId=${encodeURIComponent(
+        pipeline.chunkId
+      )}`,
       {
         method: "GET",
         headers: {

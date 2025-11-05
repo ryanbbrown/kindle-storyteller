@@ -5,7 +5,7 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 os.environ.setdefault("DYLD_LIBRARY_PATH", "/opt/homebrew/lib")
 os.environ.setdefault("LD_LIBRARY_PATH", "/opt/homebrew/lib")
@@ -83,7 +83,7 @@ def render_page(
     page_index: int = 0,
 ) -> Path:
     glyphs_path = extract_root / "glyphs.json"
-    page_data_path = extract_root / "page_data_0_5.json"
+    page_data_path = resolve_versioned_json(extract_root, "page_data")
 
     if not glyphs_path.exists():
         raise FileNotFoundError(f"missing glyphs.json at {glyphs_path}")
@@ -150,6 +150,36 @@ def render_page(
     output_path = output_dir / f"page_{page_index:04d}.png"
     canvas.save(output_path)
     return output_path
+
+
+def resolve_versioned_json(extract_root: Path, base_name: str) -> Path:
+    """
+    Locate Kindle renderer artifacts that may be versioned, e.g. page_data_0_5.json.
+    Prefer an unversioned file when available; otherwise pick the highest numeric suffix.
+    """
+    default_path = extract_root / f"{base_name}.json"
+    if default_path.exists():
+        return default_path
+
+    candidates: List[Path] = sorted(extract_root.glob(f"{base_name}_*.json"))
+    if not candidates:
+        raise FileNotFoundError(f"No {base_name} JSON found under {extract_root}")
+
+    def sort_key(path: Path) -> Tuple[Tuple[int, object], ...]:
+        suffix = path.stem[len(base_name) :]
+        if suffix.startswith("_"):
+            suffix = suffix[1:]
+        if not suffix:
+            return ()
+        parts: List[Tuple[int, object]] = []
+        for part in suffix.split("_"):
+            try:
+                parts.append((0, int(part)))
+            except ValueError:
+                parts.append((1, part))
+        return tuple(parts)
+
+    return max(candidates, key=sort_key)
 
 
 def main() -> None:

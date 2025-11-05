@@ -4,8 +4,9 @@ import argparse
 import json
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Sequence
 
 from render_page import render_page, resolve_versioned_json
 
@@ -41,22 +42,59 @@ def detect_tesseract() -> bool:
     return shutil.which("tesseract") is not None
 
 
-def run_tesseract(png_path: Path, txt_path: Path) -> bool:
-    try:
-        subprocess.run(
-            ["tesseract", str(png_path), str(txt_path.with_suffix(""))],
-            check=True,
-            capture_output=True,
-        )
-        return True
-    except subprocess.CalledProcessError:
-        return False
+def run_tesseract(png_path: Path) -> str | None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        output_base = Path(tmpdir) / "ocr"
+
+        try:
+            subprocess.run(
+                ["tesseract", str(png_path), str(output_base)],
+                check=True,
+                capture_output=True,
+            )
+            txt_path = output_base.with_suffix(".txt")
+            if txt_path.exists():
+                return txt_path.read_text(encoding="utf-8", errors="ignore")
+            return None
+        except subprocess.CalledProcessError:
+            return None
 
 
-def load_page_count(extract_root: Path) -> int:
+def load_page_data(extract_root: Path) -> List[Dict[str, Any]]:
     page_data_path = resolve_versioned_json(extract_root, "page_data")
     data = json.loads(page_data_path.read_text())
-    return len(data)
+    if not isinstance(data, list):
+        raise ValueError(f"Unexpected page data format in {page_data_path}")
+    return data
+
+
+def normalize_position(value: Any) -> str:
+    if isinstance(value, (int, float)):
+        return str(int(value))
+    if isinstance(value, str):
+        if ";" in value:
+            major, minor = value.split(";", 1)
+            major_digits = "".join(ch for ch in major if ch.isdigit())
+            minor_digits = "".join(ch for ch in minor if ch.isdigit())
+            if major_digits:
+                minor_digits = minor_digits.zfill(3)
+                return f"{int(major_digits)}{minor_digits}"
+        digits = "".join(ch for ch in value if ch.isdigit())
+        if digits:
+            return digits
+    raise ValueError(f"Unable to normalize position value: {value!r}")
+
+
+def page_position(entry: Dict[str, Any], kind: str) -> Dict[str, str]:
+    raw_key = f"{kind}Position"
+    id_key = f"{kind}PositionId"
+    raw = entry.get(raw_key)
+    raw_str = str(raw) if raw is not None else ""
+    try:
+        normalized = normalize_position(raw)
+    except ValueError:
+        normalized = normalize_position(entry.get(id_key))
+    return {"raw": raw_str, "normalized": normalized}
 
 
 def main() -> None:
@@ -65,48 +103,58 @@ def main() -> None:
     output_dir = Path(args.output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    total_pages = load_page_count(extract_root)
+    page_data = load_page_data(extract_root)
+    total_pages = len(page_data)
     start_index = max(args.start_page, 0)
     end_index = min(total_pages, start_index + max(args.max_pages, 1))
+    end_index = max(end_index, start_index + 1)
+
+    start_meta = page_position(page_data[start_index], "start")
+    end_meta = page_position(page_data[end_index - 1], "end")
+    chunk_id = f"chunk_pos_{start_meta['normalized']}_{end_meta['normalized']}"
+
+    pages_dir = output_dir / "pages" / chunk_id
+    pages_dir.mkdir(parents=True, exist_ok=True)
+    combined_text: List[str] = []
 
     processed_pages: List[Dict[str, Any]] = []
-    combined_text = []
     ocr_enabled = detect_tesseract()
 
     for page_index in range(start_index, end_index):
-        png_dir = output_dir / "pages"
         png_path = render_page(
             extract_root=extract_root,
-            output_dir=png_dir,
+            output_dir=pages_dir,
             page_index=page_index,
         )
 
-        text_path = None
+        text_path_str = None
         if ocr_enabled:
-            txt_dir = output_dir / "ocr"
-            txt_dir.mkdir(parents=True, exist_ok=True)
-            text_path = txt_dir / f"page_{page_index:04d}.txt"
-            if run_tesseract(png_path, text_path):
-                combined_text.append(
-                    text_path.read_text(encoding="utf-8", errors="ignore")
-                )
-            else:
-                text_path = None
+            text_data = run_tesseract(png_path)
+            if text_data:
+                combined_text.append(text_data)
 
         processed_pages.append(
             {
                 "index": page_index,
                 "png": str(png_path),
-                "text_path": str(text_path) if text_path else None,
+                "text_path": text_path_str,
+                "chunk_id": chunk_id,
             }
         )
 
     combined_path = None
     if combined_text:
-        combined_path = output_dir / "combined.txt"
-        combined_path.write_text("\n".join(combined_text))
+        combined_path = output_dir / f"{chunk_id}.txt"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        combined_path.write_text("\n\n".join(combined_text), encoding="utf-8")
 
     summary = {
+        "chunk_id": chunk_id,
+        "pages_dir": str(pages_dir),
+        "start_position": start_meta["normalized"],
+        "end_position": end_meta["normalized"],
+        "start_position_raw": start_meta["raw"],
+        "end_position_raw": end_meta["raw"],
         "total_pages": total_pages,
         "processed_pages": len(processed_pages),
         "pages": processed_pages,

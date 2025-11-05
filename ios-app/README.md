@@ -15,7 +15,7 @@ This folder contains a SwiftUI app that drives the Kindle pipeline workflow you 
 | `KindleAudioApp/ContentView.swift` | The main SwiftUI screen. Think of it like `App.tsx`: it renders the login button, metadata display, and pipeline controls, and wires up button actions. |
 | `KindleAudioApp/LoginWebView.swift` | Hosts the embedded Amazon reader in a `WKWebView`. It injects JavaScript, captures cookies/headers, and sends the parsed values back to Swift via closures. |
 | `KindleAudioApp/SessionStore.swift` | Observable state container (similar to a React context store). Keeps cookies, tokens, ASIN, starting position, etc., and publishes changes to the UI. |
-| `KindleAudioApp/APIClient.swift` | Minimal REST client using `URLSession`. Mirrors the Fastify endpoints (`/session`, `/books`, `/books/{asin}/content`, `/books/{asin}/ocr`, `/books/{asin}/text`). |
+| `KindleAudioApp/APIClient.swift` | Minimal REST client using `URLSession`. Mirrors the Fastify endpoints (`/session`, `/books`, `/books/{asin}/pipeline`, `/books/{asin}/text`). |
 | `KindleAudioApp/Resources/webhooks.js` | JavaScript injected into the web view. Listens for network traffic, logs URLs, and extracts cookies, render headers, tokens, GUID, ASIN, and starting position straight from the intercepted requests. |
 | `KindleAudioApp/Logs/…` | Created at runtime inside the simulator’s Documents folder; network URLs are appended here for debugging. |
 
@@ -33,13 +33,9 @@ Captured values (cookies, rendering token, device token, GUID, ASIN, starting po
 All API buttons ultimately call helpers in `ContentView.swift`:
 
 - **Create Session** → `createSession()`: wraps `ensureSession()`. It builds the payload from captured values and POSTs `/session`. The session ID is cached so future calls reuse it.
-- **Fetch Renderer Preview** → `fetchFirstBookContent()`: POSTs `/books/{asin}/content` with the stored starting position and your stepper-controlled render options (`numPage`, `skipPageCount`).
-- **Run OCR** → `runOcrPipeline()`: follows the end-to-end flow you specified:
-  1. `ensureSession()` (creates or reuses the server session).
-  2. Uses the captured ASIN directly.
-  3. Downloads the renderer bundle.
-  4. Runs OCR (optional `maxPages` from a stepper).
-- **Get Text Chunk** → `fetchTextChunk()`: GET `/books/{asin}/text` with `start`/`length` stepper values. The response increments `start` automatically for the next fetch, similar to paginating through bytes in Python.
+- **Fetch Books** → `fetchBooks()`: GETs `/books` so the UI can display cached Kindle titles for the signed-in account.
+- **Start Audiobook** → `startAudiobookPipeline()`: POSTs `/books/{asin}/pipeline` with the captured starting position, render steppers (`numPages`, `skipPages`), and optional OCR limits. The server responds with the consolidated chunk/metadata/OCR payload.
+- **Get Text Chunk** → `fetchTextChunk()`: GET `/books/{asin}/text` with `start`/`length` stepper values. It prefers the last pipeline chunk ID and bumps `start` by `bytesRead` to stream sequential slices.
 
 Status updates are appended to the “Status Log” box so you can verify each step without diving into the Xcode console.
 

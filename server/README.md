@@ -1,16 +1,15 @@
 # Kindle Backend
 
 ## Overview
-Node/TypeScript Fastify service that wraps the `kindle-api` library, proxies renderer downloads through `tls-client`, runs the glyph/OCR pipeline (Python), and exposes REST endpoints for the iOS client. Single-user deployments keep session state and extracted files on local disk.
+Node/TypeScript Fastify service that wraps the `kindle-api` library, proxies renderer downloads through `tls-client`, runs the OCR pipeline (Python), and exposes REST endpoints for the iOS client. Single-user deployments keep session state and extracted files on local disk.
 
 ## Core Modules
 
 ### 1. HTTP Server (Fastify)
-Defines routes in `src/routes/` for session setup, book listing, renderer download, glyph pipeline, reading-progress updates, and streaming OCR text. `session.ts` exposes the public `POST /session` entry point; every other route expects a `sessionId` via `Authorization: Bearer <token>` and delegates work to services.
+Defines routes in `src/routes/` for session setup, book listing, chunk pipeline orchestration, reading-progress updates, and streaming OCR text. `session.ts` exposes the public `POST /session` entry point; every other route expects a `sessionId` via `Authorization: Bearer <token>` and delegates work to services.
 
 - `session.ts` → `POST /session`: validate cookies/device token/render token/GUID, create session, return `sessionId` + initial books.
-- `content.ts` → `POST /books/:asin/content`: download renderer TAR, extract metadata; honors `renderOptions` (starting position, page count).
-- `ocr.ts` → `POST /books/:asin/ocr`: run glyph/OCR pipeline (calls content service if needed) and cache PNG/TXT paths.
+- `pipeline.ts` → `POST /books/:asin/pipeline`: idempotent chunk workflow that downloads renderer output and optionally runs OCR for the requested starting position.
 - `text.ts` → `GET /books/:asin/text`: stream a slice of the combined OCR text (`start`/`length` query params).
 - `progress.ts` → `POST /books/:asin/progress`: proxy Kindle `stillReading` to update position using cached ADP token/GUID.
 
@@ -20,11 +19,16 @@ Non-core
 ### 2. Session Store
 `SessionStore` creates Kindle clients from supplied cookies/device token, caches renderer/glyph results, and tracks TTL. In-memory only; session id is a UUID returned from `/session`.
 
-### 3. Content Service
-`downloadAndExtractContent` hits Amazon’s renderer with TLS client, stores the `.tar` bundle under `server/data/books/<asin>/renderer/`, and extracts glyph/token metadata. Allows caller to override `startingPosition`, `numPage`, `skipPageCount`.
+### 3. Chunk Pipeline Services
+`chunk-pipeline.ts` orchestrates the download/OCR flow and guarantees idempotency. The helpers beneath it ensure re-runs reuse existing artifacts.
 
-### 4. Glyph Pipeline Service
-`runGlyphPipeline` invokes the Python pipeline (`glyph-extraction/pipeline.py`). Renders pages to PNG, runs Tesseract when available, writes OCR output under `server/data/books/<asin>/ocr/`, and returns metadata JSON.
+- `download.ts` → `ensureChunkDownloaded` hits Amazon’s renderer with TLS client and writes chunk-scoped artifacts under `server/data/books/<asin>/chunks/<chunk_pos_start_end>/` with:
+  - `content.tar`
+  - `extracted/` (manifest, tokens, layout JSON)
+  - `metadata.json` (RendererCoverageMetadata snapshot for the chunk)
+- `ocr.ts` → `runChunkOcr` invokes the Python pipeline (`glyph-extraction/pipeline.py`) to render PNG/TXT artifacts and updates chunk metadata/summary files.
+
+Metadata is updated in the chunk’s `metadata.json` file with the final artifact paths and an OCR summary pointer.
 
 ## Data Flow
 
@@ -33,9 +37,7 @@ POST /session → SessionStore.create → Kindle.fromConfig (cookies, device tok
           ↓
 GET /books → session.kindle.books() → cache
           ↓
-POST /books/:asin/content → downloadAndExtractContent → renderer .tar + JSON
-          ↓
-POST /books/:asin/ocr → runGlyphPipeline → PNG + OCR text
+POST /books/:asin/pipeline → ensureChunkDownloaded → runChunkOcr (optional) → chunk folder populated + summary
           ↓
 GET /books/:asin/text?start&length → stream combined.txt slice
           ↓
@@ -49,14 +51,14 @@ server/
 ├── src/
 │   ├── app.ts              # Fastify bootstrap + route registration
 │   ├── session-store.ts    # Session context map, TTL GC
-│   ├── routes/             # session, books, content, pipeline, text, progress
-│   ├── services/           # content-service, glyph-service, (auth utils)
+│   ├── routes/             # session, books, pipeline, text, progress
+│   ├── services/           # download, ocr, chunk-pipeline, (auth utils)
 │   └── env.ts              # dotenv loader + defaults (storageDir, TLS)
 ├── data/
 │   ├── .gitkeep            # Persist directory structure
 │   └── books/<asin>/...    # Renderer and OCR artifacts (ignored by git)
 └── scripts/
-    └── test-api.ts         # Smoke test: session → books → content → extract → text
+    └── test-api.ts         # Smoke test: session → books → pipeline → text
 ```
 
 ## Running & Testing

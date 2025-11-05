@@ -14,6 +14,7 @@ type TextParams = {
 type TextQuery = {
   start?: string;
   length?: string;
+  chunkId?: string;
 };
 
 type TextResponse = {
@@ -49,12 +50,10 @@ export async function registerTextRoutes(
 
     const start = clampToZero(parseIntSafe(request.query?.start, 0));
     const length = clampToPositive(parseIntSafe(request.query?.length, 2000));
-
-    const combinedPath =
-      session.glyphCache.get(asin)?.combined_text_path ??
-      path.join(env.storageDir, asin, "ocr", "combined.txt");
+    const chunkId = request.query?.chunkId?.trim();
 
     try {
+      const combinedPath = await resolveCombinedTextPath(asin, chunkId);
       const stats = await fs.stat(combinedPath);
       const fileHandle = await fs.open(combinedPath, "r");
 
@@ -79,7 +78,7 @@ export async function registerTextRoutes(
         text,
       });
     } catch (error) {
-      request.log.error({ err: error }, "Failed to read combined text");
+      request.log.error({ err: error, asin }, "Failed to read combined text");
       return reply
         .status(404)
         .send({ message: "Combined text not found for this ASIN" } as never);
@@ -104,4 +103,48 @@ function clampToPositive(value: number): number {
     return 2000;
   }
   return value;
+}
+
+async function resolveCombinedTextPath(
+  asin: string,
+  chunkId?: string
+): Promise<string> {
+  const chunksDir = path.join(env.storageDir, asin, "chunks");
+
+  if (chunkId) {
+    const targetPath = path.join(chunksDir, chunkId, "full-content.txt");
+    const stats = await fs.stat(targetPath);
+    if (!stats.isFile()) {
+      throw new Error("Combined text not found for specified chunk");
+    }
+    return targetPath;
+  }
+
+  let chunkFolders: string[];
+  try {
+    chunkFolders = await fs.readdir(chunksDir);
+  } catch {
+    throw new Error("No chunks have been rendered for this ASIN");
+  }
+
+  const candidates: Array<{ path: string; mtime: number }> = [];
+
+  for (const chunkFolder of chunkFolders) {
+    const fullPath = path.join(chunksDir, chunkFolder, "full-content.txt");
+    try {
+      const stats = await fs.stat(fullPath);
+      if (stats.isFile()) {
+        candidates.push({ path: fullPath, mtime: stats.mtimeMs });
+      }
+    } catch {
+      // ignore missing files within chunk
+    }
+  }
+
+  if (candidates.length === 0) {
+    throw new Error("Combined text file not found");
+  }
+
+  candidates.sort((a, b) => b.mtime - a.mtime);
+  return candidates[0]!.path;
 }

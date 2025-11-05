@@ -8,8 +8,7 @@ import { SessionStore } from "./session-store.js";
 import { registerSessionRoutes } from "./routes/session.js";
 import { registerBooksRoutes } from "./routes/books.js";
 import { registerProgressRoutes } from "./routes/progress.js";
-import { registerContentRoutes } from "./routes/content.js";
-import { registerOcrRoutes } from "./routes/ocr.js";
+import { registerPipelineRoutes } from "./routes/pipeline.js";
 import { registerTextRoutes } from "./routes/text.js";
 
 export async function buildApp() {
@@ -31,8 +30,7 @@ export async function buildApp() {
   await registerSessionRoutes(app, store);
   await registerBooksRoutes(app, store);
   await registerProgressRoutes(app, store);
-  await registerContentRoutes(app, store);
-  await registerOcrRoutes(app, store);
+  await registerPipelineRoutes(app, store);
   await registerTextRoutes(app, store);
 
   const timer = setInterval(() => {

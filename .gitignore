@@ -12,6 +12,8 @@ venv/
 ENV/
 env/
 
+tmp/
+
 # Node.js
 node_modules/
 npm-debug.log*
@@ -40,6 +42,8 @@ TLS_Client_API
 .idea/
 .vscode/*
 !.vscode/extensions.json
+**/xcuserdata/
+**/xcshareddata/
 *.suo
 *.ntvs*
 *.njsproj
@@ -71,7 +75,7 @@ config.*.yml
 
 # Kindle book extraction outputs
 output/
-extracted/
+eI thougtracted/
 archive/
 *.tar
 *.html

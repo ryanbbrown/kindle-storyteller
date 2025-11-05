@@ -15,11 +15,6 @@ export type SessionContext = {
   createdAt: number;
   lastAccessedAt: number;
   booksCache: KindleBook[];
-  contentCache: Map<
-    string,
-    import("./services/content-service.js").ContentPayload
-  >;
-  glyphCache: Map<string, import("./services/glyph-service.js").GlyphPipelineResult>;
 };
 
 export type CreateSessionInput = {
@@ -52,8 +47,6 @@ export class SessionStore {
       createdAt: now,
       lastAccessedAt: now,
       booksCache: [...kindle.defaultBooks],
-      contentCache: new Map(),
-      glyphCache: new Map(),
     };
 
     this.sessions.set(sessionId, context);

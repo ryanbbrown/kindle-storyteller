@@ -10,6 +10,7 @@
     "test:api": "tsx scripts/test-api.ts"
   },
   "dependencies": {
+    "@elevenlabs/elevenlabs-js": "^2.21.0",
     "@fastify/cors": "^8.4.2",
     "dotenv": "^16.4.5",
     "fastify": "^4.26.2",

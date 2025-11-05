@@ -4,17 +4,11 @@ struct ContentView: View {
     @ObservedObject var sessionStore: SessionStore
     @State private var isPresentingLogin = false
 
-    @State private var baseURLString = "http://127.0.0.1:3000"
-    @State private var deviceToken = ""
-    @State private var renderingToken = ""
-    @State private var guid = ""
-    @State private var asin = ""
     @State private var webViewReloadCounter = 0
 
     @State private var sessionId: String?
     @State private var books: [APIClient.Book] = []
-    @State private var latestContent: APIClient.BookContent?
-    @State private var latestOcr: APIClient.OcrResponse?
+    @State private var latestPipeline: APIClient.PipelineResponse?
     @State private var latestTextChunk: APIClient.TextResponse?
     @State private var statusLog: [String] = []
     @State private var isPerformingRequest = false
@@ -23,20 +17,22 @@ struct ContentView: View {
     @State private var ocrMaxPages: Int = 2
     @State private var textStart: Int = 0
     @State private var textLength: Int = 500
+    @State private var manualStartingPosition: String = ""
+    @State private var useManualStartingPosition: Bool = false
+    @State private var activeAlert: AppAlert?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 headerSection
-                cookiesSection
-                apiConfigurationSection
+                bookMetadataSection
                 ocrConfigurationSection
                 textConfigurationSection
                 actionButtonsSection
                 sessionInfoSection
                 booksSection
-                contentPreviewSection
-                ocrInfoSection
+                pipelineSummarySection
+                ocrResultsSection
                 textOutputSection
                 logSection
             }
@@ -50,18 +46,22 @@ struct ContentView: View {
                     initialURL: URL(string: "https://read.amazon.com")!,
                     onCookiesCaptured: { cookies in
                         sessionStore.updateCookies(cookies)
+                        Task { @MainActor in invalidateSession(reason: "cookies refreshed") }
                     },
                     onRenderingTokenCaptured: { token, url in
                         sessionStore.updateRenderingToken(token, sourceURL: url)
+                        Task { @MainActor in invalidateSession(reason: "rendering token refreshed") }
                     },
                     onDeviceTokenCaptured: { token in
                         sessionStore.updateDeviceToken(token)
+                        Task { @MainActor in invalidateSession(reason: "device token refreshed") }
                     },
                     onStartingPositionCaptured: { position in
                         sessionStore.updateStartingPosition(position)
                     },
                     onGUIDCaptured: { value in
                         sessionStore.updateGUID(value)
+                        Task { @MainActor in invalidateSession(reason: "GUID refreshed") }
                     },
                     onASINCaptured: { value in
                         sessionStore.updateASIN(value)
@@ -86,35 +86,12 @@ struct ContentView: View {
                 }
             }
         }
-        .onChange(of: sessionStore.renderingToken) { newValue in
-            guard let token = newValue, !token.isEmpty else { return }
-            renderingToken = token
-        }
-        .onChange(of: sessionStore.deviceToken) { newValue in
-            guard let token = newValue, !token.isEmpty else { return }
-            deviceToken = token
-        }
-        .onChange(of: sessionStore.guid) { newValue in
-            guard let value = newValue, !value.isEmpty else { return }
-            guid = value
-        }
-        .onChange(of: sessionStore.asin) { newValue in
-            guard let value = newValue, !value.isEmpty else { return }
-            asin = value
-        }
-        .onAppear {
-            if let token = sessionStore.renderingToken, !token.isEmpty {
-                renderingToken = token
-            }
-            if let token = sessionStore.deviceToken, !token.isEmpty {
-                deviceToken = token
-            }
-            if let value = sessionStore.guid, !value.isEmpty {
-                guid = value
-            }
-            if let value = sessionStore.asin, !value.isEmpty {
-                asin = value
-            }
+        .alert(item: $activeAlert) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                dismissButton: .default(Text("OK"))
+            )
         }
     }
 
@@ -135,100 +112,26 @@ struct ContentView: View {
         }
     }
 
-    private var cookiesSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Session Cookies")
-                    .font(.title3.bold())
-
-                if sessionStore.cookies.isEmpty {
-                    Text("No cookies captured yet.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(sessionStore.cookies, id: \.name) { cookie in
-                        Text("\(cookie.name): \(cookie.value.truncated(maxLength: 40))")
-                            .font(.caption.monospaced())
-                    }
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Rendering Token")
-                    .font(.title3.bold())
-
-                if let token = sessionStore.renderingToken, !token.isEmpty {
-                    Text(token.truncated(maxLength: 60))
-                        .font(.caption.monospaced())
-                } else {
-                    Text("Not captured yet.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Device Token")
-                    .font(.title3.bold())
-
-                if let token = sessionStore.deviceToken, !token.isEmpty {
-                    Text(token)
-                        .font(.caption.monospaced())
-                } else {
-                    Text("Not captured yet.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("GUID")
-                    .font(.title3.bold())
-
-                if let guidValue = sessionStore.guid, !guidValue.isEmpty {
-                    Text(guidValue)
-                        .font(.caption.monospaced())
-                } else {
-                    Text("Not captured yet.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("ASIN")
-                    .font(.title3.bold())
-
-                if let asinValue = sessionStore.asin, !asinValue.isEmpty {
-                    Text(asinValue)
-                        .font(.caption.monospaced())
-                } else {
-                    Text("Not captured yet.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Starting Position")
-                    .font(.title3.bold())
-
-                if let position = sessionStore.startingPosition, !position.isEmpty {
-                    Text(position)
-                        .font(.caption.monospaced())
-                } else {
-                    Text("Not captured yet.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
-
-    private var apiConfigurationSection: some View {
-        GroupBox("API Configuration") {
+    private var bookMetadataSection: some View {
+        GroupBox("Captured Book Data") {
             VStack(alignment: .leading, spacing: 12) {
-                configurationField(title: "Base URL", text: $baseURLString)
-                configurationField(title: "Rendering Token", text: $renderingToken)
+                HStack {
+                    Text("ASIN")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Text(sessionStore.asin ?? "—")
+                        .font(.caption.monospaced())
+                        .foregroundStyle((sessionStore.asin?.isEmpty ?? true) ? .secondary : .primary)
+                }
+
+                HStack {
+                    Text("Starting Position")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Text(sessionStore.startingPosition ?? "—")
+                        .font(.caption.monospaced())
+                        .foregroundStyle((sessionStore.startingPosition?.isEmpty ?? true) ? .secondary : .primary)
+                }
             }
         }
     }
@@ -240,6 +143,12 @@ struct ContentView: View {
                 Stepper("Skip pages: \(renderSkipPages)", value: $renderSkipPages, in: 0...20)
                 Stepper("Max pages to OCR: \(ocrMaxPages == 0 ? "all" : String(ocrMaxPages))", value: $ocrMaxPages, in: 0...20)
                     .help("Set to 0 to process all pages")
+                Toggle("Use manual starting position", isOn: $useManualStartingPosition)
+                if useManualStartingPosition {
+                    TextField("Enter starting position (e.g. 3698;0 or 210769)", text: $manualStartingPosition)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.caption.monospaced())
+                }
             }
         }
     }
@@ -250,19 +159,6 @@ struct ContentView: View {
                 Stepper("Start byte: \(textStart)", value: $textStart, in: 0...1_000_000, step: 100)
                 Stepper("Chunk length: \(textLength)", value: $textLength, in: 100...5000, step: 100)
             }
-        }
-    }
-
-    private func configurationField(title: String, text: Binding<String>) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            TextField(title, text: text)
-                .textFieldStyle(.roundedBorder)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .font(.callout.monospaced())
         }
     }
 
@@ -284,20 +180,14 @@ struct ContentView: View {
                     }
                     .buttonStyle(.bordered)
                     .disabled(isPerformingRequest)
-
-                    Button("Fetch Renderer Preview") {
-                        Task { await fetchFirstBookContent() }
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(isPerformingRequest || (sessionStore.asin?.isEmpty ?? true))
                 }
 
                 HStack(spacing: 12) {
-                    Button("Run OCR") {
-                        Task { await runOcrPipeline() }
+                    Button("Start Audiobook") {
+                        Task { await startAudiobookPipeline() }
                     }
-                    .buttonStyle(.bordered)
-                    .disabled(isPerformingRequest)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isPerformingRequest || (sessionStore.asin?.isEmpty ?? true))
 
                     Button("Get Text Chunk") {
                         Task { await fetchTextChunk() }
@@ -337,20 +227,35 @@ struct ContentView: View {
         }
     }
 
-    private var contentPreviewSection: some View {
-        GroupBox("Content Preview") {
-            if let latestContent {
+    private var pipelineSummarySection: some View {
+        GroupBox("Pipeline Summary") {
+            if let pipeline = latestPipeline {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Length: \(latestContent.textLength)")
+                    Text("Chunk ID: \(pipeline.chunkId)")
                         .font(.caption)
-                    Text("Cached: \(latestContent.cached ? "yes" : "no")")
-                        .font(.caption)
-                    Divider()
-                    Text(latestContent.textPreview)
-                        .font(.caption.monospaced())
+
+                    if let range = pipeline.chunkMetadata.ranges.first {
+                        Text("Positions: \(range.start.offset) → \(range.end.offset)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Text("Steps: \(pipeline.steps.map { $0.displayName }.joined(separator: ", "))")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+
+                    if let combinedPath = pipeline.ocr?.combinedTextPath ?? pipeline.artifacts.combinedTextPath {
+                        Text("Combined text: \(combinedPath)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Text("Artifacts stored at \(pipeline.artifacts.extractDir)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
             } else {
-                Text("No content fetched yet.")
+                Text("Pipeline has not been run yet.")
                     .foregroundStyle(.secondary)
             }
         }
@@ -377,11 +282,17 @@ struct ContentView: View {
     }
 
     private var canCreateSession: Bool {
-        !cookieString.isEmpty &&
-        !deviceToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        !renderingToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        !guid.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        URL(string: baseURLString.trimmingCharacters(in: .whitespacesAndNewlines)) != nil
+        guard !cookieString.isEmpty else { return false }
+        guard let deviceToken = sessionStore.deviceToken?.trimmedNonEmpty() else {
+            return false
+        }
+        guard let renderingToken = sessionStore.renderingToken?.trimmedNonEmpty() else {
+            return false
+        }
+        guard let guid = sessionStore.guid?.trimmedNonEmpty() else {
+            return false
+        }
+        return true
     }
 
     private var cookieString: String {
@@ -391,8 +302,67 @@ struct ContentView: View {
     }
 
     @MainActor
+    private func ensureBookMetadata() -> (asin: String, startingPosition: String)? {
+        guard let asin = sessionStore.asin?.trimmedNonEmpty() else {
+            presentAlert(
+                title: "Missing Book",
+                message: "We haven’t captured a book ASIN yet. Open the Login web view, tap the Kindle book you want, then try again."
+            )
+            log("Missing ASIN; prompted user to reopen the reader.")
+            return nil
+        }
+        guard let startingPosition = sessionStore.startingPosition?.trimmedNonEmpty() else {
+            presentAlert(
+                title: "Missing Starting Position",
+                message: "Navigate inside the Kindle book in the embedded browser so we can capture the current position, then run the action again."
+            )
+            log("Missing starting position; prompted user to navigate inside the reader.")
+            return nil
+        }
+        return (asin: asin, startingPosition: startingPosition)
+    }
+
+    @MainActor
+    private func ensureSessionInputs() -> Bool {
+        if cookieString.isEmpty {
+            presentAlert(
+                title: "Sign In Required",
+                message: loginRefreshMessage(reason: "Session cookies are missing or expired.")
+            )
+            log("Missing cookies; prompted user to log in again.")
+            return false
+        }
+        guard sessionStore.deviceToken?.trimmedNonEmpty() != nil else {
+            presentAlert(
+                title: "Sign In Required",
+                message: loginRefreshMessage(reason: "Device token is missing.")
+            )
+            log("Missing device token; prompted user to log in again.")
+            return false
+        }
+        guard sessionStore.renderingToken?.trimmedNonEmpty() != nil else {
+            presentAlert(
+                title: "Sign In Required",
+                message: loginRefreshMessage(reason: "Rendering token is missing.")
+            )
+            log("Missing rendering token; prompted user to log in again.")
+            return false
+        }
+        guard sessionStore.guid?.trimmedNonEmpty() != nil else {
+            presentAlert(
+                title: "Sign In Required",
+                message: loginRefreshMessage(reason: "GUID is missing.")
+            )
+            log("Missing GUID; prompted user to log in again.")
+            return false
+        }
+        return true
+    }
+
+    @MainActor
     private func createSession() async {
-        latestOcr = nil
+        guard ensureSessionInputs() else { return }
+        latestPipeline = nil
         latestTextChunk = nil
         do {
             let client = try makeClient()
@@ -407,6 +377,7 @@ struct ContentView: View {
 
     @MainActor
     private func fetchBooks() async {
+        guard ensureSessionInputs() else { return }
         do {
             let client = try makeClient()
             let sessionId = try await ensureSession(client: client)
@@ -423,81 +394,44 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func fetchFirstBookContent() async {
-        guard let asin = sessionStore.asin, !asin.isEmpty else {
-            log("No ASIN captured yet. Open the reader to load a book.")
-            return
-        }
-        guard let startingPosition = sessionStore.startingPosition, !startingPosition.isEmpty else {
-            log("Starting position missing. Navigate inside the reader first.")
-            return
-        }
+    private func startAudiobookPipeline() async {
+        guard let metadata = ensureBookMetadata() else { return }
+        guard ensureSessionInputs() else { return }
 
-        latestOcr = nil
-        latestTextChunk = nil
-
-        do {
-            let client = try makeClient()
-            let sessionId = try await ensureSession(client: client)
-            isPerformingRequest = true
-            log("Fetching renderer preview for \(asin)...")
-            defer { isPerformingRequest = false }
-
-            let renderRequest = APIClient.RenderRequest(renderOptions: .init(
-                startingPosition: startingPosition,
-                numPage: renderNumPages,
-                skipPageCount: renderSkipPages
-            ))
-            let response = try await client.fetchBookContent(sessionId: sessionId, asin: asin, renderOptions: renderRequest)
-            latestContent = response
-            log("Renderer bundle ready. length=\(response.textLength) cached=\(response.cached)")
-        } catch {
-            logError(error)
-        }
-    }
-
-    @MainActor
-    private func runOcrPipeline() async {
-        guard let asin = sessionStore.asin, !asin.isEmpty else {
-            log("No ASIN captured yet. Open the reader to load a book.")
-            return
-        }
-        guard let startingPosition = sessionStore.startingPosition, !startingPosition.isEmpty else {
-            log("Starting position missing. Navigate inside the reader first.")
-            return
-        }
+        let asin = metadata.asin
+        let startingPosition = resolveStartingPosition(defaultValue: metadata.startingPosition)
 
         do {
             let client = try makeClient()
             isPerformingRequest = true
-            log("OCR pipeline starting for \(asin).")
-            log("Step 1: Ensuring session...")
+            log("Starting pipeline for \(asin) at position \(startingPosition)...")
             let sessionId = try await ensureSession(client: client)
-            log("Step 1: Session ready.")
-            log("Step 2: Using captured ASIN \(asin).")
-            log("Step 3: Downloading renderer bundle (start \(startingPosition), numPage \(renderNumPages), skip \(renderSkipPages))...")
             defer { isPerformingRequest = false }
 
-            let renderRequest = APIClient.RenderRequest(renderOptions: .init(
+            let request = APIClient.PipelineRequest(
                 startingPosition: startingPosition,
-                numPage: renderNumPages,
-                skipPageCount: renderSkipPages
-            ))
-            let contentResponse = try await client.fetchBookContent(sessionId: sessionId, asin: asin, renderOptions: renderRequest)
-            latestContent = contentResponse
-            log("Step 3: Renderer bundle saved (cached=\(contentResponse.cached ? "yes" : "no")).")
+                numPages: renderNumPages,
+                skipPages: renderSkipPages,
+                steps: [.download, .ocr],
+                ocr: .init(startPage: 0, maxPages: ocrMaxPages > 0 ? ocrMaxPages : nil)
+            )
 
-            let ocrRequest: APIClient.OcrRequest?
-            if ocrMaxPages > 0 {
-                ocrRequest = APIClient.OcrRequest(maxPages: ocrMaxPages)
-                log("Step 4: Running OCR (maxPages=\(ocrMaxPages))...")
+            latestTextChunk = nil
+            let response = try await client.runPipeline(sessionId: sessionId, asin: asin, request: request)
+            latestPipeline = response
+
+            let stepSummary = response.steps.map { $0.displayName }.joined(separator: ", ")
+            log("Pipeline steps completed: \(stepSummary)")
+
+            if response.steps.contains(.ocr) {
+                if let ocr = response.ocr {
+                    log("Pipeline finished. OCR processed \(ocr.processedPages)/\(ocr.totalPages) pages (chunkId=\(response.chunkId)).")
+                } else {
+                    log("Pipeline finished without OCR results (likely reused cache).")
+                }
             } else {
-                ocrRequest = nil
-                log("Step 4: Running OCR (all pages)...")
+                log("Pipeline finished. chunkId=\(response.chunkId)")
             }
-            let ocrResponse = try await client.runOcr(sessionId: sessionId, asin: asin, request: ocrRequest)
-            latestOcr = ocrResponse
-            log("Step 4: OCR complete for \(asin). Processed \(ocrResponse.processedPages)/\(ocrResponse.totalPages) pages (cached=\(ocrResponse.cached ? "yes" : "no")).")
         } catch {
             logError(error)
         }
@@ -505,19 +439,25 @@ struct ContentView: View {
 
     @MainActor
     private func fetchTextChunk() async {
-        guard let asin = sessionStore.asin, !asin.isEmpty else {
-            log("No ASIN captured yet. Open the reader to load a book.")
-            return
-        }
+        guard let metadata = ensureBookMetadata() else { return }
+        guard ensureSessionInputs() else { return }
+        let asin = metadata.asin
 
         do {
             let client = try makeClient()
             let sessionId = try await ensureSession(client: client)
             isPerformingRequest = true
-            log("Fetching text chunk start=\(textStart) length=\(textLength)...")
+            let chunkId = latestPipeline?.chunkId
+            log("Fetching text chunk start=\(textStart) length=\(textLength) chunkId=\(chunkId ?? "latest")...")
             defer { isPerformingRequest = false }
 
-            let response = try await client.fetchText(sessionId: sessionId, asin: asin, start: textStart, length: textLength)
+            let response = try await client.fetchText(
+                sessionId: sessionId,
+                asin: asin,
+                start: textStart,
+                length: textLength,
+                chunkId: chunkId
+            )
             latestTextChunk = response
             log("Fetched text chunk (bytesRead=\(response.bytesRead)).")
             if response.bytesRead > 0 {
@@ -529,15 +469,26 @@ struct ContentView: View {
     }
 
     private func makeClient() throws -> APIClient {
-        let trimmedBase = baseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let baseURL = URL(string: trimmedBase), !trimmedBase.isEmpty else {
+        guard let baseURL = URL(string: "http://127.0.0.1:3000") else {
             throw ValidationError.invalidBaseURL
         }
         return APIClient(baseURL: baseURL)
     }
 
     @MainActor
-    private func ensureSession(client: APIClient) async throws -> String {
+    
+    private func resolveStartingPosition(defaultValue: String) -> String {
+        guard useManualStartingPosition else {
+            return defaultValue
+        }
+        let trimmed = manualStartingPosition.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return defaultValue
+        }
+        log("Using manual starting position: \\(trimmed)")
+        return trimmed
+    }
+private func ensureSession(client: APIClient) async throws -> String {
         if let sessionId, !sessionId.isEmpty {
             log("Reusing existing session.")
             return sessionId
@@ -553,53 +504,131 @@ struct ContentView: View {
 
     private func buildSessionRequest() throws -> APIClient.SessionRequest {
         guard !cookieString.isEmpty else { throw ValidationError.missing("session cookies") }
-        let trimmedDeviceToken = deviceToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedDeviceToken.isEmpty else { throw ValidationError.missing("device token") }
-        let trimmedRenderingToken = renderingToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedRenderingToken.isEmpty else { throw ValidationError.missing("rendering token") }
-        let trimmedGUID = guid.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedGUID.isEmpty else { throw ValidationError.missing("GUID") }
+        guard let deviceToken = sessionStore.deviceToken?.trimmedNonEmpty() else {
+            throw ValidationError.missing("device token")
+        }
+        guard let renderingToken = sessionStore.renderingToken?.trimmedNonEmpty() else {
+            throw ValidationError.missing("rendering token")
+        }
+        guard let guid = sessionStore.guid?.trimmedNonEmpty() else {
+            throw ValidationError.missing("GUID")
+        }
 
         return APIClient.SessionRequest(
             cookieString: cookieString,
-            deviceToken: trimmedDeviceToken,
-            renderingToken: trimmedRenderingToken,
-            guid: trimmedGUID,
+            deviceToken: deviceToken,
+            renderingToken: renderingToken,
+            guid: guid,
             tlsServerUrl: "http://localhost:8080",
             tlsApiKey: "my-auth-key-1"
         )
     }
-    private var ocrInfoSection: some View {
+
+    @MainActor
+    private func invalidateSession(reason: String? = nil) {
+        guard sessionId != nil else { return }
+        sessionId = nil
+        if let reason {
+            log("Cleared cached session: \(reason).")
+        } else {
+            log("Cleared cached session.")
+        }
+    }
+
+    @MainActor
+    private func presentAlert(title: String, message: String) {
+        activeAlert = AppAlert(title: title, message: message)
+    }
+
+    private func loginRefreshMessage(reason: String) -> String {
+        """
+        \(reason)
+
+        Please open the Login screen, sign into Amazon again, and tap the book you want so we can refresh the session.
+        """
+    }
+
+    private func sessionExpiryReason(for apiError: APIClient.APIError) -> String? {
+        let normalized = normalizedApiMessage(from: apiError)
+        let lower = normalized.lowercased()
+
+        if apiError.statusCode == 401 || apiError.statusCode == 403 {
+            return "Amazon rejected our credentials (HTTP \(apiError.statusCode))."
+        }
+
+        if lower.contains("expired") {
+            return "Amazon reports the session is expired."
+        }
+
+        if (400...499).contains(apiError.statusCode) {
+            if lower.contains("cookie") {
+                return "Amazon could not validate the Kindle cookies."
+            }
+            if lower.contains("rendering") && lower.contains("token") {
+                return "Amazon could not validate the rendering token."
+            }
+            if lower.contains("device") && lower.contains("token") {
+                return "Amazon could not validate the device token."
+            }
+            if lower.contains("guid") {
+                return "Amazon could not validate the GUID."
+            }
+            if lower.contains("unauthorized") || lower.contains("forbidden") {
+                return "Amazon rejected our credentials (HTTP \(apiError.statusCode))."
+            }
+        }
+
+        return nil
+    }
+
+    private func normalizedApiMessage(from apiError: APIClient.APIError) -> String {
+        let raw = apiError.message
+        guard let data = raw.data(using: .utf8) else { return raw }
+
+        if let object = try? JSONSerialization.jsonObject(with: data, options: []),
+           let dict = object as? [String: Any] {
+            if let message = dict["message"] as? String, !message.isEmpty {
+                return message
+            }
+            if let error = dict["error"] as? String, !error.isEmpty {
+                return error
+            }
+            if let detail = dict["detail"] as? String, !detail.isEmpty {
+                return detail
+            }
+        }
+
+        return raw
+    }
+    private var ocrResultsSection: some View {
         GroupBox("OCR Results") {
-            if let latestOcr {
+            if let pipeline = latestPipeline, let ocr = pipeline.ocr {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Pages processed: \(latestOcr.processedPages) / \(latestOcr.totalPages)")
+                    Text("Pages processed: \(ocr.processedPages) / \(ocr.totalPages)")
                         .font(.caption)
-                    Text("Cached: \(latestOcr.cached ? "yes" : "no") • OCR enabled: \(latestOcr.ocrEnabled ? "yes" : "no")")
+                    Text("Chunk ID: \(pipeline.chunkId)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text("OCR enabled: \(ocr.ocrEnabled ? "yes" : "no")")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
 
-                    if let combined = latestOcr.combinedTextPath {
+                    if let combined = ocr.combinedTextPath {
                         Text("Combined text: \(combined)")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
 
-                    if let firstPage = latestOcr.pages.first {
+                    if let firstPage = ocr.pages.first {
                         Text("Sample page: index \(firstPage.index)")
                             .font(.caption)
                         Text(firstPage.png)
                             .font(.caption2)
                             .foregroundStyle(.secondary)
-                        if let textPath = firstPage.textPath {
-                            Text(textPath)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
                     }
                 }
             } else {
-                Text("OCR has not been run yet.")
+                Text("OCR results are not available yet.")
                     .foregroundStyle(.secondary)
             }
         }
@@ -633,11 +662,36 @@ struct ContentView: View {
 
     @MainActor
     private func logError(_ error: Error) {
+        if let validation = error as? ValidationError {
+            log("Error: \(validation.localizedDescription)")
+            presentAlert(
+                title: "Missing Information",
+                message: validation.guidanceMessage
+            )
+            return
+        }
+
         if let apiError = error as? APIClient.APIError {
             log("Error: \(apiError.localizedDescription)")
-        } else {
-            log("Error: \(error.localizedDescription)")
+            if let reason = sessionExpiryReason(for: apiError) {
+                presentAlert(
+                    title: "Session Expired",
+                    message: loginRefreshMessage(reason: reason)
+                )
+            } else {
+                presentAlert(
+                    title: "Request Failed",
+                    message: normalizedApiMessage(from: apiError)
+                )
+            }
+            return
         }
+
+        log("Error: \(error.localizedDescription)")
+        presentAlert(
+            title: "Request Failed",
+            message: error.localizedDescription
+        )
     }
 }
 
@@ -653,6 +707,19 @@ private enum ValidationError: LocalizedError {
             return "Missing \(field)."
         }
     }
+
+    var guidanceMessage: String {
+        switch self {
+        case .invalidBaseURL:
+            return "The app’s base URL is invalid. Update the code with a reachable API host and try again."
+        case .missing(let field):
+            return """
+            \(field.capitalized) is missing or expired.
+
+            Please open the Login screen, sign into Amazon again, and tap your book so we can refresh the session.
+            """
+        }
+    }
 }
 
 private extension String {
@@ -661,6 +728,23 @@ private extension String {
         let endIndex = index(startIndex, offsetBy: maxLength)
         return String(self[..<endIndex]) + "..."
     }
+
+    func trimmedNonEmpty() -> String? {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+private extension APIClient.PipelineStep {
+    var displayName: String {
+        rawValue.capitalized
+    }
+}
+
+private struct AppAlert: Identifiable {
+    let id = UUID()
+    let title: String
+    let message: String
 }
 
 struct ContentView_Previews: PreviewProvider {
