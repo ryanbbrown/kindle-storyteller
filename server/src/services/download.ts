@@ -14,7 +14,6 @@ import type {
   CoverageRange,
   RendererCoverageMetadata,
 } from "../types/chunk-metadata.js";
-import { pipelineDebugLog } from "../utils/pipeline-debug-logger.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -74,36 +73,14 @@ export async function ensureChunkDownloaded(
   const { asin, kindle, renderingToken } = options;
   const rendererConfig = normalizeRenderOptions(options.renderOptions);
 
-  await pipelineDebugLog("download.ensureChunkDownloaded.start", {
-    asin,
-    startingPosition: rendererConfig.startingPosition,
-    numPage: rendererConfig.numPage,
-    skipPageCount: rendererConfig.skipPageCount,
-  });
-
   const startOffset = parseNormalizedOffset(rendererConfig.startingPosition);
   const requestPositionId = extractPositionIdFromInput(rendererConfig.startingPosition);
-  await pipelineDebugLog("download.ensureChunkDownloaded.normalizedPosition", {
-    asin,
-    startOffset,
-    requestPositionId,
-  });
 
   const asinDir = path.join(env.storageDir, asin);
   const chunksRoot = path.join(asinDir, "chunks");
   await fs.mkdir(chunksRoot, { recursive: true });
-  await pipelineDebugLog("download.ensureChunkDownloaded.chunksRootReady", {
-    asin,
-    chunksRoot,
-  });
 
   const existing = await findExistingChunk({ asin, startOffset, requestPositionId, chunksRoot });
-  await pipelineDebugLog("download.ensureChunkDownloaded.findExistingCompleted", {
-    asin,
-    startOffset,
-    requestPositionId,
-    foundChunkId: existing?.chunkId ?? null,
-  });
   if (existing) {
     const reuse = await buildResultFromExisting({
       asin,
@@ -111,16 +88,8 @@ export async function ensureChunkDownloaded(
       existing,
     });
     if (reuse) {
-      await pipelineDebugLog("download.ensureChunkDownloaded.reuseSuccess", {
-        asin,
-        chunkId: reuse.chunkId,
-      });
       return reuse;
     }
-    await pipelineDebugLog("download.ensureChunkDownloaded.reuseFailed", {
-      asin,
-      chunkId: existing.chunkId,
-    });
   }
 
   return await downloadFreshChunk({
@@ -141,98 +110,59 @@ async function findExistingChunk(options: {
   const { startOffset, requestPositionId, chunksRoot } = options;
 
   let entries: string[];
-  await pipelineDebugLog("download.findExistingChunk.start", {
-    asin: options.asin,
-    startOffset,
-    requestPositionId,
-    chunksRoot,
-  });
   try {
     entries = await fs.readdir(chunksRoot);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      await pipelineDebugLog("download.findExistingChunk.dirMissing", {
-        asin: options.asin,
-        chunksRoot,
-      });
       return undefined;
     }
     throw error;
   }
-
-  await pipelineDebugLog("download.findExistingChunk.entries", {
-    asin: options.asin,
-    count: entries.length,
-    entries,
-  });
 
   for (const entry of entries) {
     const chunkDir = path.join(chunksRoot, entry);
     const metadataPath = path.join(chunkDir, METADATA_FILENAME);
     const metadata = await readChunkMetadata(metadataPath);
     if (!metadata) {
-      await pipelineDebugLog("download.findExistingChunk.metadataMissing", {
-        asin: options.asin,
-        entry,
-      });
       continue;
     }
 
-    const range = metadata.ranges.find((candidate) => {
-      const matchesOffset = candidate.start.offset === startOffset;
-      if (matchesOffset) {
-        return true;
+    let range: CoverageRange | undefined;
+
+    for (const candidate of metadata.ranges) {
+      if (
+        requestPositionId !== undefined &&
+        candidate.start.positionId !== undefined &&
+        candidate.start.positionId === requestPositionId
+      ) {
+        range = candidate;
+        break;
       }
 
       if (
         requestPositionId !== undefined &&
         candidate.start.positionId !== undefined &&
-        candidate.end.positionId !== undefined
+        candidate.end.positionId !== undefined &&
+        requestPositionId >= candidate.start.positionId &&
+        requestPositionId <= candidate.end.positionId
       ) {
-        const inRange =
-          requestPositionId >= candidate.start.positionId &&
-          requestPositionId <= candidate.end.positionId;
-        if (inRange) {
-          return true;
-        }
+        range = candidate;
+        break;
       }
 
-      return false;
-    });
-
-    if (!range) {
-      await pipelineDebugLog("download.findExistingChunk.rangeMismatch", {
-        asin: options.asin,
-        entry,
-        startOffset,
-        requestPositionId,
-        availableOffsets: metadata.ranges.map((r) => ({
-          offset: r.start.offset,
-          startPositionId: r.start.positionId,
-          endPositionId: r.end.positionId,
-        })),
-      });
-      continue;
+      if (candidate.start.offset === startOffset) {
+        range = candidate;
+        break;
+      }
     }
 
-    await pipelineDebugLog("download.findExistingChunk.match", {
-      asin: options.asin,
-      entry,
-      startOffset,
-      requestPositionId,
-      matchedOffset: range.start.offset,
-      matchedStartPositionId: range.start.positionId,
-      matchedEndPositionId: range.end.positionId,
-    });
+    if (!range) {
+      continue;
+    }
 
     return { chunkId: entry, chunkDir, metadataPath, metadata, range };
   }
 
-  await pipelineDebugLog("download.findExistingChunk.noMatch", {
-    asin: options.asin,
-    startOffset,
-    requestPositionId,
-  });
   return undefined;
 }
 
@@ -246,29 +176,12 @@ async function buildResultFromExisting(options: {
 
   const artifacts = resolveArtifacts(range, chunkDir);
 
-  await pipelineDebugLog("download.buildResultFromExisting.artifacts", {
-    asin,
-    chunkId,
-    artifacts,
-  });
-
   const [extractOk, tarOk] = await Promise.all([
     pathExists(artifacts.extractDir, true),
     pathExists(artifacts.contentTarPath, false),
   ]);
 
-  await pipelineDebugLog("download.buildResultFromExisting.pathChecks", {
-    asin,
-    chunkId,
-    extractOk,
-    tarOk,
-  });
-
   if (!extractOk || !tarOk) {
-    await pipelineDebugLog("download.buildResultFromExisting.pathFailure", {
-      asin,
-      chunkId,
-    });
     return undefined;
   }
 
@@ -276,26 +189,10 @@ async function buildResultFromExisting(options: {
   const rendererMetadata = await readJsonSafe(path.join(artifacts.extractDir, "metadata.json"));
   const toc = await readJsonSafe(path.join(artifacts.extractDir, "toc.json"));
 
-  await pipelineDebugLog("download.buildResultFromExisting.jsonChecks", {
-    asin,
-    chunkId,
-    manifestPresent: manifest !== null,
-    rendererMetadataPresent: rendererMetadata !== null,
-    tocPresent: toc !== null,
-  });
-
   if (manifest === null || rendererMetadata === null || toc === null) {
-    await pipelineDebugLog("download.buildResultFromExisting.jsonFailure", {
-      asin,
-      chunkId,
-    });
     return undefined;
   }
 
-  await pipelineDebugLog("download.buildResultFromExisting.success", {
-    asin,
-    chunkId,
-  });
   return {
     asin,
     chunkId,
@@ -323,22 +220,10 @@ async function downloadFreshChunk(options: {
   const tempRoot = path.join(asinDir, "tmp");
   await fs.mkdir(tempRoot, { recursive: true });
 
-  await pipelineDebugLog("download.downloadFreshChunk.stagingDirCreate", {
-    asin,
-    tempRoot,
-  });
-
   const stagingDir = await fs.mkdtemp(path.join(tempRoot, "render-"));
   const stagingTar = path.join(stagingDir, "content.tar");
   const stagingExtractDir = path.join(stagingDir, "extracted");
   await fs.mkdir(stagingExtractDir, { recursive: true });
-
-  await pipelineDebugLog("download.downloadFreshChunk.stagingReady", {
-    asin,
-    stagingDir,
-    stagingTar,
-    stagingExtractDir,
-  });
 
   try {
     const response = await kindle.request(
@@ -350,11 +235,6 @@ async function downloadFreshChunk(options: {
       }
     );
 
-    await pipelineDebugLog("download.downloadFreshChunk.requestCompleted", {
-      asin,
-      status: response?.status,
-    });
-
     if (response.status !== 200) {
       throw new Error(
         `Renderer request failed: status=${response.status} body=${String(response.body).slice(0, 200)}`
@@ -363,22 +243,9 @@ async function downloadFreshChunk(options: {
 
     const buffer = coerceBodyToBuffer(response.body);
     await fs.writeFile(stagingTar, buffer);
-    await pipelineDebugLog("download.downloadFreshChunk.tarWritten", {
-      asin,
-      stagingTar,
-      size: buffer.byteLength,
-    });
     await execFileAsync("tar", ["-xf", stagingTar, "-C", stagingExtractDir]);
-    await pipelineDebugLog("download.downloadFreshChunk.tarExtracted", {
-      asin,
-      stagingExtractDir,
-    });
 
     const pageDataPath = await findPageDataFile(stagingExtractDir);
-    await pipelineDebugLog("download.downloadFreshChunk.pageDataFound", {
-      asin,
-      pageDataPath,
-    });
     const pageDataRaw = await fs.readFile(pageDataPath, "utf8");
     const pageData = JSON.parse(pageDataRaw);
     if (!Array.isArray(pageData) || pageData.length === 0) {
@@ -387,47 +254,20 @@ async function downloadFreshChunk(options: {
 
     const start = normalizePagePosition(pageData[0], "start");
     const end = normalizePagePosition(pageData[pageData.length - 1], "end");
-    const chunkId = `chunk_pos_${start.offset}_${end.offset}`;
-
-    await pipelineDebugLog("download.downloadFreshChunk.chunkComputed", {
-      asin,
-      chunkId,
-      startOffset: start.offset,
-      endOffset: end.offset,
-    });
+    const chunkId = buildChunkId(start, end);
 
     const chunkDir = path.join(chunksRoot, chunkId);
     await fs.rm(chunkDir, { recursive: true, force: true });
     await fs.mkdir(chunkDir, { recursive: true });
-
-    await pipelineDebugLog("download.downloadFreshChunk.chunkDirPrepared", {
-      asin,
-      chunkDir,
-    });
 
     const finalTarPath = path.join(chunkDir, "content.tar");
     const finalExtractDir = path.join(chunkDir, "extracted");
     await fs.rename(stagingTar, finalTarPath);
     await fs.rename(stagingExtractDir, finalExtractDir);
 
-    await pipelineDebugLog("download.downloadFreshChunk.artifactsMoved", {
-      asin,
-      chunkDir,
-      finalTarPath,
-      finalExtractDir,
-    });
-
     const manifest = await readJsonSafe(path.join(finalExtractDir, "manifest.json"));
     const rendererMetadata = await readJsonSafe(path.join(finalExtractDir, "metadata.json"));
     const toc = await readJsonSafe(path.join(finalExtractDir, "toc.json"));
-
-    await pipelineDebugLog("download.downloadFreshChunk.jsonParsed", {
-      asin,
-      chunkDir,
-      manifestPresent: manifest !== null,
-      rendererMetadataPresent: rendererMetadata !== null,
-      tocPresent: toc !== null,
-    });
 
     if (manifest === null || rendererMetadata === null || toc === null) {
       throw new Error("Renderer extract missing manifest/metadata/toc files");
@@ -458,12 +298,6 @@ async function downloadFreshChunk(options: {
 
     await writeChunkMetadata(metadataPath, chunkMetadata);
 
-    await pipelineDebugLog("download.downloadFreshChunk.metadataWritten", {
-      asin,
-      chunkId,
-      metadataPath,
-    });
-
     return {
       asin,
       chunkId,
@@ -478,9 +312,6 @@ async function downloadFreshChunk(options: {
     };
   } finally {
     await fs.rm(stagingDir, { recursive: true, force: true }).catch(() => {});
-    await pipelineDebugLog("download.downloadFreshChunk.cleanup", {
-      asin,
-    });
   }
 }
 
@@ -655,6 +486,15 @@ function coerceBodyToBuffer(body: unknown): Buffer {
   throw new Error("Unexpected renderer response body type");
 }
 
+function buildChunkId(start: CoverageRange["start"], end: CoverageRange["end"]): string {
+  const startId = typeof start.positionId === "number" ? Math.trunc(start.positionId) : undefined;
+  const endId = typeof end.positionId === "number" ? Math.trunc(end.positionId) : undefined;
+  if (Number.isFinite(startId) && Number.isFinite(endId)) {
+    return `chunk_pid_${startId}_${endId}`;
+  }
+  return `chunk_pos_${start.offset}_${end.offset}`;
+}
+
 function resolveArtifacts(range: CoverageRange, chunkDir: string): ChunkArtifacts {
   const defaultExtractDir = path.join(chunkDir, "extracted");
   const defaultPagesDir = path.join(chunkDir, "pages");
@@ -673,19 +513,9 @@ function resolveArtifacts(range: CoverageRange, chunkDir: string): ChunkArtifact
 async function pathExists(targetPath: string, expectDirectory: boolean): Promise<boolean> {
   try {
     const stats = await fs.stat(targetPath);
-    await pipelineDebugLog("download.pathExists.success", {
-      targetPath,
-      expectDirectory,
-      isDirectory: stats.isDirectory?.() ?? false,
-      isFile: stats.isFile?.() ?? false,
-    });
     return expectDirectory ? stats.isDirectory() : stats.isFile();
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      await pipelineDebugLog("download.pathExists.missing", {
-        targetPath,
-        expectDirectory,
-      });
       return false;
     }
     throw error;

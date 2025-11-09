@@ -1,6 +1,7 @@
 # General Rules
-Always ask the user any necessary follow up questions about their intent before making changes.
-Always create the simplest solution first; don't add excess features the user didn't mention.
+- Always ask the user any necessary follow up questions about their intent before making changes.
+- Always create the simplest solution first; don't add excess features the user didn't mention.
+- Do NOT use ad-hoc python or jquery scripts to read or modify files. Only use built-in read and write tools, along with bash commands like grep.
 
 # iOS App Build Check
 

@@ -85,7 +85,7 @@ def normalize_position(value: Any) -> str:
     raise ValueError(f"Unable to normalize position value: {value!r}")
 
 
-def page_position(entry: Dict[str, Any], kind: str) -> Dict[str, str]:
+def page_position(entry: Dict[str, Any], kind: str) -> Dict[str, Any]:
     raw_key = f"{kind}Position"
     id_key = f"{kind}PositionId"
     raw = entry.get(raw_key)
@@ -94,7 +94,18 @@ def page_position(entry: Dict[str, Any], kind: str) -> Dict[str, str]:
         normalized = normalize_position(raw)
     except ValueError:
         normalized = normalize_position(entry.get(id_key))
-    return {"raw": raw_str, "normalized": normalized}
+    position_id = entry.get(id_key)
+    if isinstance(position_id, (int, float)):
+        position_id = int(position_id)
+    else:
+        position_id = None
+    return {"raw": raw_str, "normalized": normalized, "position_id": position_id}
+
+
+def build_chunk_id(start_meta: Dict[str, Any], end_meta: Dict[str, Any]) -> str:
+    if start_meta.get("position_id") is not None and end_meta.get("position_id") is not None:
+        return f"chunk_pid_{start_meta['position_id']}_{end_meta['position_id']}"
+    return f"chunk_pos_{start_meta['normalized']}_{end_meta['normalized']}"
 
 
 def main() -> None:
@@ -111,7 +122,7 @@ def main() -> None:
 
     start_meta = page_position(page_data[start_index], "start")
     end_meta = page_position(page_data[end_index - 1], "end")
-    chunk_id = f"chunk_pos_{start_meta['normalized']}_{end_meta['normalized']}"
+    chunk_id = build_chunk_id(start_meta, end_meta)
 
     pages_dir = output_dir / "pages" / chunk_id
     pages_dir.mkdir(parents=True, exist_ok=True)
@@ -155,6 +166,8 @@ def main() -> None:
         "end_position": end_meta["normalized"],
         "start_position_raw": start_meta["raw"],
         "end_position_raw": end_meta["raw"],
+        "start_position_id": start_meta.get("position_id"),
+        "end_position_id": end_meta.get("position_id"),
         "total_pages": total_pages,
         "processed_pages": len(processed_pages),
         "pages": processed_pages,

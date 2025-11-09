@@ -22,7 +22,7 @@ Non-core
 ### 3. Chunk Pipeline Services
 `chunk-pipeline.ts` orchestrates the download/OCR flow and guarantees idempotency. The helpers beneath it ensure re-runs reuse existing artifacts.
 
-- `download.ts` → `ensureChunkDownloaded` hits Amazon’s renderer with TLS client and writes chunk-scoped artifacts under `server/data/books/<asin>/chunks/<chunk_pos_start_end>/` with:
+- `download.ts` → `ensureChunkDownloaded` hits Amazon’s renderer with TLS client and writes chunk-scoped artifacts under `server/data/books/<asin>/chunks/<chunk_pid_startId_endId>/` with:
   - `content.tar`
   - `extracted/` (manifest, tokens, layout JSON)
   - `metadata.json` (RendererCoverageMetadata snapshot for the chunk)

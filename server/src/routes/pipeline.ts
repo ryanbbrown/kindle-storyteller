@@ -7,7 +7,6 @@ import {
   type ChunkPipelineState,
   type RunChunkPipelineOptions,
 } from "../services/chunk-pipeline.js";
-import { pipelineDebugLog, getPipelineLogPath } from "../utils/pipeline-debug-logger.js";
 
 type PipelineParams = {
   asin: string;
@@ -35,26 +34,13 @@ export async function registerPipelineRoutes(
     Body: PipelineBody;
     Reply: PipelineResponse;
   }>("/books/:asin/pipeline", async (request, reply) => {
-    await pipelineDebugLog("route.pipeline.request.received", {
-      path: request.routerPath,
-      asinParam: request.params.asin,
-      body: request.body,
-      logFile: getPipelineLogPath(),
-    });
-
     const session = requireSession(store, request, reply);
     if (!session) {
-      await pipelineDebugLog("route.pipeline.session.missing", {
-        asinParam: request.params.asin,
-      });
       return;
     }
 
     const asin = request.params.asin?.trim();
     if (!asin) {
-      await pipelineDebugLog("route.pipeline.validation.noAsin", {
-        asinParam: request.params.asin,
-      });
       return reply
         .status(400)
         .send({ message: "asin is required" } as never);
@@ -62,10 +48,6 @@ export async function registerPipelineRoutes(
 
     const startingPosition = request.body?.startingPosition;
     if (startingPosition === undefined || startingPosition === null) {
-      await pipelineDebugLog("route.pipeline.validation.noStartingPosition", {
-        asin,
-        body: request.body,
-      });
       return reply
         .status(400)
         .send({ message: "startingPosition is required" } as never);
@@ -82,19 +64,8 @@ export async function registerPipelineRoutes(
       ocr: request.body?.ocr,
     };
 
-    await pipelineDebugLog("route.pipeline.options.ready", {
-      asin,
-      options,
-    });
-
     try {
       const result = await runChunkPipeline(options);
-      await pipelineDebugLog("route.pipeline.success", {
-        asin,
-        chunkId: result.chunkId,
-        steps: result.steps,
-        hasOcr: Boolean(result.ocr),
-      });
       return reply.status(200).send(result);
     } catch (error) {
       if (error instanceof Error) {
@@ -102,10 +73,6 @@ export async function registerPipelineRoutes(
           error.message.includes("Unsupported pipeline step") ||
           error.message.includes("Chunk download step was skipped")
         ) {
-          await pipelineDebugLog("route.pipeline.userError", {
-            asin,
-            message: error.message,
-          });
           return reply
             .status(400)
             .send({ message: error.message } as never);
@@ -113,10 +80,6 @@ export async function registerPipelineRoutes(
       }
 
       request.log.error({ err: error }, "Failed to run chunk pipeline");
-      await pipelineDebugLog("route.pipeline.failure", {
-        asin,
-        error: error instanceof Error ? error.message : String(error),
-      });
       return reply
         .status(500)
         .send({ message: "Failed to run chunk pipeline" } as never);

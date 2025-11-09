@@ -1,5 +1,6 @@
 import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
 import dotenv from 'dotenv';
+import type { Dirent } from 'node:fs';
 import {
   mkdir,
   readFile,
@@ -18,7 +19,7 @@ dotenv.config({ path: resolve(__dirname, '../.env') });
 const ELEVENLABS_VOICE_ID =
   process.env.ELEVENLABS_VOICE_ID ?? 'JBFqnCBsd6RMkjVDRZzb';
 const ELEVENLABS_MODEL_ID =
-  process.env.ELEVENLABS_MODEL_ID ?? 'eleven_multilingual_v2';
+  process.env.ELEVENLABS_MODEL_ID ?? 'eleven_flash_v2_5';
 const OUTPUT_FORMAT = process.env.ELEVENLABS_OUTPUT_FORMAT ?? 'mp3_44100_128';
 const BENCHMARK_INTERVAL_SECONDS = Number(
   process.env.ELEVENLABS_BENCHMARK_INTERVAL_SECONDS ?? '5',
@@ -26,6 +27,14 @@ const BENCHMARK_INTERVAL_SECONDS = Number(
 const DEFAULT_MAX_CHARACTERS = process.env.ELEVENLABS_MAX_CHARACTERS
   ? Number(process.env.ELEVENLABS_MAX_CHARACTERS)
   : undefined;
+const DEFAULT_SENTENCE_TARGET = (() => {
+  const value = Number(process.env.ELEVENLABS_SENTENCE_TARGET ?? '3');
+  return Number.isFinite(value) && value > 0 ? value : 3;
+})();
+const SENTENCE_SLICE_MAX_CHARS = (() => {
+  const value = Number(process.env.ELEVENLABS_SENTENCE_MAX_CHARS ?? '1200');
+  return Number.isFinite(value) && value > 0 ? value : 1200;
+})();
 
 if (!process.env.ELEVENLABS_API_KEY) {
   throw new Error('Missing ELEVENLABS_API_KEY in server/.env');
@@ -36,11 +45,23 @@ interface Coverage {
   ranges: CoverageRange[];
 }
 
+interface RangeBound {
+  offset: number;
+  raw: string;
+  normalized?: string;
+  positionId?: number;
+}
+
+interface RangeArtifacts {
+  combinedTextPath?: string;
+  [key: string]: string | undefined;
+}
+
 interface CoverageRange {
   id: string;
-  start: { offset: number; raw: string };
-  end: { offset: number; raw: string };
-  artifacts: { combinedTextPath: string };
+  start: RangeBound;
+  end: RangeBound;
+  artifacts: RangeArtifacts;
 }
 
 interface BenchmarkEntry {
@@ -87,6 +108,34 @@ function normalizeTextWithMap(input: string) {
   return { normalized, map };
 }
 
+function computeSentenceSliceLength(
+  text: string,
+  targetSentences: number,
+  hardCap: number,
+): number {
+  const cap = Math.max(1, Math.min(hardCap, text.length));
+  if (!Number.isFinite(targetSentences) || targetSentences <= 0) {
+    return cap;
+  }
+
+  let sentences = 0;
+  for (let index = 0; index < text.length && index < cap; index++) {
+    const char = text[index];
+    if (char === '.' || char === '!' || char === '?') {
+      sentences += 1;
+      if (sentences >= targetSentences) {
+        let end = index + 1;
+        while (end < text.length && end < cap && /\s/.test(text[end])) {
+          end += 1;
+        }
+        return Math.min(Math.max(end, 1), cap);
+      }
+    }
+  }
+
+  return cap;
+}
+
 async function resolveDefaultAsin(dataDir: string): Promise<string> {
   const entries = await readdir(dataDir, { withFileTypes: true });
   const asinDir = entries.find(
@@ -101,15 +150,58 @@ async function resolveDefaultAsin(dataDir: string): Promise<string> {
 }
 
 async function loadCoverage(dataDir: string, asin: string): Promise<Coverage> {
-  const coveragePath = resolve(dataDir, asin, 'renderer', 'coverage.json');
-  const coverageContents = await readFile(coveragePath, 'utf8');
-  const coverage = JSON.parse(coverageContents) as Coverage;
+  const chunksDir = resolve(dataDir, asin, 'chunks');
+  let entries: Dirent[];
 
-  if (!coverage.ranges?.length) {
-    throw new Error(`No ranges found in coverage file for ASIN ${asin}`);
+  try {
+    entries = await readdir(chunksDir, { withFileTypes: true });
+  } catch (error) {
+    throw new Error(
+      `Unable to read chunks directory for ASIN ${asin}: ${(error as Error).message}`,
+    );
   }
 
-  return coverage;
+  const ranges: CoverageRange[] = [];
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+
+    const metadataPath = resolve(chunksDir, entry.name, 'metadata.json');
+    let metadataRaw: string;
+
+    try {
+      metadataRaw = await readFile(metadataPath, 'utf8');
+    } catch {
+      continue;
+    }
+
+    try {
+      const metadata = JSON.parse(metadataRaw) as Coverage;
+      if (Array.isArray(metadata.ranges)) {
+        for (const range of metadata.ranges) {
+          ranges.push(range);
+        }
+      }
+    } catch {
+      // Ignore malformed metadata files.
+    }
+  }
+
+  if (!ranges.length) {
+    throw new Error(
+      `No chunk metadata ranges found for ASIN ${asin} in ${chunksDir}`,
+    );
+  }
+
+  ranges.sort((a, b) => {
+    const aKey = a.start.positionId ?? a.start.offset;
+    const bKey = b.start.positionId ?? b.start.offset;
+    return aKey - bKey;
+  });
+
+  return { asin, ranges };
 }
 
 async function ensureExists(path: string) {
@@ -141,15 +233,28 @@ async function main() {
     throw new Error(`Unable to resolve a range for ASIN ${asin}`);
   }
 
-  await ensureExists(range.artifacts.combinedTextPath);
-  const rawText = await readFile(range.artifacts.combinedTextPath, 'utf8');
+  const combinedTextPath = range.artifacts.combinedTextPath;
+  if (!combinedTextPath) {
+    throw new Error(
+      `Range ${range.id} is missing combined text artifacts. Re-run OCR pipeline first.`,
+    );
+  }
+
+  await ensureExists(combinedTextPath);
+  const rawText = await readFile(combinedTextPath, 'utf8');
   const { normalized: normalizedText, map: normalizedMap } =
     normalizeTextWithMap(rawText);
 
-  const sliceLength =
+  const userCap =
     maxCharacters != null
       ? Math.min(Math.max(maxCharacters, 1), normalizedText.length)
       : normalizedText.length;
+  const hardCap = Math.min(userCap, SENTENCE_SLICE_MAX_CHARS, normalizedText.length);
+  const sliceLength = computeSentenceSliceLength(
+    normalizedText,
+    DEFAULT_SENTENCE_TARGET,
+    hardCap,
+  );
 
   const textForTts = normalizedText.slice(0, sliceLength);
   const charToOriginalIndex = normalizedMap.slice(0, sliceLength);

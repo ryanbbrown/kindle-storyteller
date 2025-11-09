@@ -8,7 +8,6 @@ import {
   readChunkMetadata,
   writeChunkMetadata,
 } from "./chunk-metadata-service.js";
-import { pipelineDebugLog } from "../utils/pipeline-debug-logger.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -62,16 +61,6 @@ export async function runChunkOcr(
 
   const summaryPath = path.join(chunkDir, SUMMARY_FILENAME);
 
-  await pipelineDebugLog("ocr.runChunkOcr.start", {
-    chunkId,
-    chunkDir,
-    extractDir,
-    metadataPath,
-    startPage,
-    maxPages,
-    summaryPath,
-  });
-
   const existing = await loadExistingSummary({
     chunkId,
     chunkDir,
@@ -79,17 +68,8 @@ export async function runChunkOcr(
     summaryPath,
   });
   if (existing) {
-    await pipelineDebugLog("ocr.runChunkOcr.reuse", {
-      chunkId,
-      processedPages: existing.processedPages,
-      totalPages: existing.totalPages,
-    });
     return existing;
   }
-
-  await pipelineDebugLog("ocr.runChunkOcr.executePipeline", {
-    chunkId,
-  });
 
   const result = await executeOcrPipeline({
     chunkId,
@@ -99,13 +79,6 @@ export async function runChunkOcr(
     startPage,
     maxPages,
     summaryPath,
-  });
-
-  await pipelineDebugLog("ocr.runChunkOcr.finish", {
-    chunkId,
-    processedPages: result.processedPages,
-    totalPages: result.totalPages,
-    combinedTextPath: result.combinedTextPath,
   });
 
   return result;
@@ -119,35 +92,17 @@ async function loadExistingSummary(options: {
 }): Promise<RunChunkOcrResult | undefined> {
   const { chunkId, chunkDir, metadataPath, summaryPath } = options;
 
-  await pipelineDebugLog("ocr.loadExistingSummary.start", {
-    chunkId,
-    summaryPath,
-  });
-
   const summary = await readSummary(summaryPath);
   if (!summary) {
-    await pipelineDebugLog("ocr.loadExistingSummary.noSummary", {
-      chunkId,
-      summaryPath,
-    });
     return undefined;
   }
 
   const ok = await validateSummaryArtifacts(summary);
   if (!ok) {
-    await pipelineDebugLog("ocr.loadExistingSummary.artifactMissing", {
-      chunkId,
-      summaryPath,
-    });
     return undefined;
   }
 
   await ensureSummaryPathRecorded({ metadataPath, chunkId, summaryPath });
-
-  await pipelineDebugLog("ocr.loadExistingSummary.valid", {
-    chunkId,
-    summaryPath,
-  });
 
   return summary;
 }
@@ -255,12 +210,6 @@ async function reorganizePages(
   const parentDir = path.join(chunkDir, "pages");
   const nestedDir = path.join(parentDir, chunkId);
   await fs.mkdir(parentDir, { recursive: true });
-  await pipelineDebugLog("ocr.reorganizePages.parentReady", {
-    chunkId,
-    parentDir,
-    nestedDir,
-    pageCount: pages.length,
-  });
 
   const result: Array<{ index: number; png: string }> = [];
 
@@ -279,20 +228,11 @@ async function reorganizePages(
           throw error;
         }
       });
-      await pipelineDebugLog("ocr.reorganizePages.moved", {
-        chunkId,
-        source,
-        target,
-      });
     }
     result.push({ index: page.index, png: target });
   }
 
   await fs.rm(nestedDir, { recursive: true, force: true });
-  await pipelineDebugLog("ocr.reorganizePages.cleaned", {
-    chunkId,
-    nestedDir,
-  });
 
   return result;
 }
@@ -303,18 +243,11 @@ async function relocateCombinedText(
   combinedPath: string | null
 ): Promise<string | null> {
   if (!combinedPath) {
-    await pipelineDebugLog("ocr.relocateCombinedText.none", {
-      chunkId,
-    });
     return null;
   }
 
   const target = path.join(chunkDir, "full-content.txt");
   if (combinedPath === target) {
-    await pipelineDebugLog("ocr.relocateCombinedText.already", {
-      chunkId,
-      target,
-    });
     return target;
   }
 
@@ -326,12 +259,6 @@ async function relocateCombinedText(
     } else if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
       throw error;
     }
-  });
-
-  await pipelineDebugLog("ocr.relocateCombinedText.moved", {
-    chunkId,
-    source: combinedPath,
-    target,
   });
 
   return target;
@@ -347,19 +274,11 @@ async function updateChunkMetadata(options: {
   const { metadataPath, chunkId, pagesDir, combinedTextPath, summaryPath } = options;
   const metadata = await readChunkMetadata(metadataPath);
   if (!metadata) {
-    await pipelineDebugLog("ocr.updateChunkMetadata.noMetadata", {
-      chunkId,
-      metadataPath,
-    });
     return;
   }
 
   const targetRange = metadata.ranges.find((range) => range.id === chunkId);
   if (!targetRange) {
-    await pipelineDebugLog("ocr.updateChunkMetadata.noRange", {
-      chunkId,
-      metadataPath,
-    });
     return;
   }
 
@@ -371,30 +290,13 @@ async function updateChunkMetadata(options: {
   metadata.updatedAt = now;
   targetRange.updatedAt = now;
 
-  await pipelineDebugLog("ocr.updateChunkMetadata.updated", {
-    chunkId,
-    metadataPath,
-    pagesDir,
-    combinedTextPath,
-    summaryPath,
-  });
-
   await writeChunkMetadata(metadataPath, metadata);
-
-  await pipelineDebugLog("ocr.updateChunkMetadata.written", {
-    chunkId,
-    metadataPath,
-  });
 }
 
 function parseSummary(raw: string): PipelineSummary {
   try {
     return JSON.parse(raw) as PipelineSummary;
   } catch (error) {
-    pipelineDebugLog("ocr.parseSummary.failure", {
-      raw: raw.slice(0, 200),
-      error: error instanceof Error ? error.message : String(error),
-    }).catch(() => {});
     throw new Error(
       `Failed to parse OCR pipeline output: ${(error as Error).message}. Raw output: ${raw}`
     );
@@ -410,11 +312,6 @@ async function persistSummary(
     savedAt: new Date().toISOString(),
   };
   await fs.writeFile(summaryPath, JSON.stringify(data, null, 2), "utf8");
-  await pipelineDebugLog("ocr.persistSummary.written", {
-    summaryPath,
-    processedPages: result.processedPages,
-    totalPages: result.totalPages,
-  });
 }
 
 async function readSummary(summaryPath: string): Promise<RunChunkOcrResult | undefined> {
@@ -425,9 +322,6 @@ async function readSummary(summaryPath: string): Promise<RunChunkOcrResult | und
     };
 
     if (!parsed || !Array.isArray(parsed.pages)) {
-      await pipelineDebugLog("ocr.readSummary.invalidShape", {
-        summaryPath,
-      });
       return undefined;
     }
 
@@ -443,20 +337,8 @@ async function readSummary(summaryPath: string): Promise<RunChunkOcrResult | und
     const ocrEnabled = Boolean(parsed.ocrEnabled);
 
     if (!Number.isFinite(totalPages) || !Number.isFinite(processedPages)) {
-      await pipelineDebugLog("ocr.readSummary.invalidNumbers", {
-        summaryPath,
-        totalPages,
-        processedPages,
-      });
       return undefined;
     }
-
-    await pipelineDebugLog("ocr.readSummary.success", {
-      summaryPath,
-      totalPages,
-      processedPages,
-      pageCount: pages.length,
-    });
 
     return {
       pages,
@@ -470,15 +352,8 @@ async function readSummary(summaryPath: string): Promise<RunChunkOcrResult | und
     };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      await pipelineDebugLog("ocr.readSummary.missing", {
-        summaryPath,
-      });
       return undefined;
     }
-    await pipelineDebugLog("ocr.readSummary.error", {
-      summaryPath,
-      error: error instanceof Error ? error.message : String(error),
-    });
     throw error;
   }
 }
@@ -493,32 +368,17 @@ async function validateSummaryArtifacts(summary: RunChunkOcrResult): Promise<boo
   }
 
   const results = await Promise.all(checks);
-  await pipelineDebugLog("ocr.validateSummaryArtifacts.results", {
-    pageCount: summary.pages.length,
-    combinedTextPath: summary.combinedTextPath,
-    valid: results.every(Boolean),
-  });
   return results.every(Boolean);
 }
 
 async function pathExists(targetPath: string): Promise<boolean> {
   try {
     await fs.access(targetPath);
-    await pipelineDebugLog("ocr.pathExists.success", {
-      targetPath,
-    });
     return true;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      await pipelineDebugLog("ocr.pathExists.missing", {
-        targetPath,
-      });
       return false;
     }
-    await pipelineDebugLog("ocr.pathExists.error", {
-      targetPath,
-      error: error instanceof Error ? error.message : String(error),
-    });
     throw error;
   }
 }
@@ -531,25 +391,13 @@ async function ensureSummaryPathRecorded(options: {
   const { metadataPath, chunkId, summaryPath } = options;
   const metadata = await readChunkMetadata(metadataPath);
   if (!metadata) {
-    await pipelineDebugLog("ocr.ensureSummaryPathRecorded.noMetadata", {
-      chunkId,
-      metadataPath,
-    });
     return;
   }
   const range = metadata.ranges.find((candidate) => candidate.id === chunkId);
   if (!range) {
-    await pipelineDebugLog("ocr.ensureSummaryPathRecorded.noRange", {
-      chunkId,
-      metadataPath,
-    });
     return;
   }
   if (range.artifacts.ocrSummaryPath === summaryPath) {
-    await pipelineDebugLog("ocr.ensureSummaryPathRecorded.alreadySet", {
-      chunkId,
-      summaryPath,
-    });
     return;
   }
 
@@ -557,8 +405,4 @@ async function ensureSummaryPathRecorded(options: {
   range.updatedAt = new Date().toISOString();
   metadata.updatedAt = range.updatedAt;
   await writeChunkMetadata(metadataPath, metadata);
-  await pipelineDebugLog("ocr.ensureSummaryPathRecorded.updated", {
-    chunkId,
-    summaryPath,
-  });
 }
