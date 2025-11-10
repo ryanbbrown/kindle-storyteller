@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @ObservedObject var sessionStore: SessionStore
+    @StateObject private var audioController = AudioPlaybackController()
     @State private var isPresentingLogin = false
 
     @State private var webViewReloadCounter = 0
@@ -20,6 +21,9 @@ struct ContentView: View {
     @State private var manualStartingPosition: String = ""
     @State private var useManualStartingPosition: Bool = false
     @State private var activeAlert: AppAlert?
+    @State private var downloadedAudioURL: URL?
+    @State private var isDownloadingAudio = false
+    @State private var audioErrorMessage: String?
 
     var body: some View {
         ScrollView {
@@ -32,6 +36,7 @@ struct ContentView: View {
                 sessionInfoSection
                 booksSection
                 pipelineSummarySection
+                audioPreviewSection
                 ocrResultsSection
                 textOutputSection
                 logSection
@@ -261,6 +266,54 @@ struct ContentView: View {
         }
     }
 
+    private var audioPreviewSection: some View {
+        GroupBox("Audio Preview") {
+            if let pipeline = latestPipeline, let audio = pipeline.audio {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Duration: \(formatDuration(audio.totalDurationSeconds)) • Characters: \(audio.textLength)")
+                        .font(.caption)
+
+                    if let url = downloadedAudioURL {
+                        Text("Saved to: \(url.lastPathComponent)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Audio has not been downloaded yet.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if let message = audioErrorMessage ?? audioController.errorMessage {
+                        Text(message)
+                            .font(.caption2)
+                            .foregroundColor(.red)
+                    }
+
+                    HStack(spacing: 12) {
+                        Button(isDownloadingAudio ? "Downloading..." : "Download Audio") {
+                            Task { await downloadAudioPreview() }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isDownloadingAudio)
+
+                        Button(audioController.isPlaying ? "Pause" : "Play") {
+                            if audioController.isPlaying {
+                                audioController.pause()
+                            } else {
+                                audioController.play()
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(!audioController.isReady)
+                    }
+                }
+            } else {
+                Text("Run the pipeline with OCR to generate an audio preview.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
     private var logSection: some View {
         GroupBox("Status Log") {
             if statusLog.isEmpty {
@@ -364,6 +417,7 @@ struct ContentView: View {
         guard ensureSessionInputs() else { return }
         latestPipeline = nil
         latestTextChunk = nil
+        resetAudioPlaybackState()
         do {
             let client = try makeClient()
             isPerformingRequest = true
@@ -417,6 +471,7 @@ struct ContentView: View {
             )
 
             latestTextChunk = nil
+            resetAudioPlaybackState()
             let response = try await client.runPipeline(sessionId: sessionId, asin: asin, request: request)
             latestPipeline = response
 
@@ -468,8 +523,49 @@ struct ContentView: View {
         }
     }
 
+    @MainActor
+    private func downloadAudioPreview() async {
+        guard let pipeline = latestPipeline, pipeline.audio != nil else {
+            log("Audio preview is not available yet. Run the pipeline first.")
+            return
+        }
+
+        guard ensureSessionInputs() else { return }
+
+        do {
+            let client = try makeClient()
+            let sessionId = try await ensureSession(client: client)
+            isDownloadingAudio = true
+            audioErrorMessage = nil
+            log("Downloading audio preview for chunk \(pipeline.chunkId)...")
+            defer { isDownloadingAudio = false }
+
+            let fileURL = try await client.downloadChunkAudio(
+                sessionId: sessionId,
+                asin: pipeline.asin,
+                chunkId: pipeline.chunkId
+            )
+
+            downloadedAudioURL = fileURL
+            let title = books.first(where: { $0.asin == pipeline.asin })?.title ?? "Kindle Audio Preview"
+            audioController.load(url: fileURL, title: title)
+            log("Audio preview saved to \(fileURL.lastPathComponent).")
+        } catch {
+            audioErrorMessage = error.localizedDescription
+            logError(error)
+        }
+    }
+
+    @MainActor
+    private func resetAudioPlaybackState() {
+        audioController.reset()
+        downloadedAudioURL = nil
+        audioErrorMessage = nil
+        isDownloadingAudio = false
+    }
+
     private func makeClient() throws -> APIClient {
-        guard let baseURL = URL(string: "http://127.0.0.1:3000") else {
+        guard let baseURL = URL(string: "http://192.168.1.30:3000") else {
             throw ValidationError.invalidBaseURL
         }
         return APIClient(baseURL: baseURL)
@@ -692,6 +788,14 @@ private func ensureSession(client: APIClient) async throws -> String {
             title: "Request Failed",
             message: error.localizedDescription
         )
+    }
+
+    private func formatDuration(_ seconds: Double) -> String {
+        guard seconds.isFinite else { return "--" }
+        let totalSeconds = Int(seconds.rounded())
+        let minutes = totalSeconds / 60
+        let remainder = totalSeconds % 60
+        return String(format: "%d:%02d", minutes, remainder)
     }
 }
 

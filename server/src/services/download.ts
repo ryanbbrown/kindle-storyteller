@@ -44,6 +44,9 @@ export type ChunkArtifacts = {
   combinedTextPath: string;
   contentTarPath: string;
   ocrSummaryPath?: string;
+  audioPath?: string;
+  audioAlignmentPath?: string;
+  audioBenchmarksPath?: string;
 };
 
 export type EnsureChunkDownloadedResult = {
@@ -507,6 +510,9 @@ function resolveArtifacts(range: CoverageRange, chunkDir: string): ChunkArtifact
     combinedTextPath: range.artifacts.combinedTextPath ?? defaultCombined,
     contentTarPath: range.artifacts.contentTarPath ?? defaultTar,
     ocrSummaryPath: range.artifacts.ocrSummaryPath,
+    audioPath: range.artifacts.audioPath,
+    audioAlignmentPath: range.artifacts.audioAlignmentPath,
+    audioBenchmarksPath: range.artifacts.audioBenchmarksPath,
   };
 }
 

@@ -38,6 +38,47 @@ struct APIClient {
         )
     }
 
+    func downloadChunkAudio(sessionId: String, asin: String, chunkId: String) async throws -> URL {
+        let encodedASIN = asin.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? asin
+        let encodedChunk = chunkId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? chunkId
+
+        guard let url = URL(string: "books/\(encodedASIN)/chunks/\(encodedChunk)/audio", relativeTo: baseURL)?.absoluteURL else {
+            throw APIError(statusCode: -1, message: "Invalid audio URL")
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(sessionId)", forHTTPHeaderField: "Authorization")
+
+        let (tempURL, response) = try await urlSession.download(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError(statusCode: -1, message: "Invalid response")
+        }
+
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            let messageData = try? Data(contentsOf: tempURL)
+            let message = messageData.flatMap { String(data: $0, encoding: .utf8) } ?? "Unknown error"
+            throw APIError(statusCode: httpResponse.statusCode, message: message)
+        }
+
+        let fileManager = FileManager.default
+        let cachesDir = try fileManager.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        let audioDir = cachesDir.appendingPathComponent("AudioPreviews", isDirectory: true)
+        try fileManager.createDirectory(at: audioDir, withIntermediateDirectories: true)
+
+        let sanitizedAsin = sanitizeFilenameComponent(asin)
+        let sanitizedChunk = sanitizeFilenameComponent(chunkId)
+        let destination = audioDir.appendingPathComponent("\(sanitizedAsin)_\(sanitizedChunk).mp3")
+
+        if fileManager.fileExists(atPath: destination.path) {
+            try fileManager.removeItem(at: destination)
+        }
+
+        try fileManager.moveItem(at: tempURL, to: destination)
+        return destination
+    }
+
     func fetchText(sessionId: String, asin: String, start: Int, length: Int, chunkId: String?) async throws -> TextResponse {
         let encodedASIN = asin.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? asin
         var path = "books/\(encodedASIN)/text?start=\(start)&length=\(length)"
@@ -98,6 +139,12 @@ struct APIClient {
         return try decoder.decode(Response.self, from: data)
     }
 
+    private func sanitizeFilenameComponent(_ input: String) -> String {
+        let sanitized = input.replacingOccurrences(of: "[^A-Za-z0-9-_]+", with: "-", options: .regularExpression)
+        let trimmed = sanitized.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return trimmed.isEmpty ? UUID().uuidString : sanitized
+    }
+
     struct SessionRequest: Encodable {
         let cookieString: String
         let deviceToken: String
@@ -141,16 +188,17 @@ struct APIClient {
         }
     }
 
-    struct PipelineResponse: Decodable, Equatable {
-        let asin: String
-        let chunkId: String
-        let rendererConfig: RendererConfig
-        let chunkDir: String
-        let metadataPath: String
-        let chunkMetadata: ChunkMetadata
-        let artifacts: Artifacts
-        let steps: [PipelineStep]
-        let ocr: OcrResult?
+        struct PipelineResponse: Decodable, Equatable {
+            let asin: String
+            let chunkId: String
+            let rendererConfig: RendererConfig
+            let chunkDir: String
+            let metadataPath: String
+            let chunkMetadata: ChunkMetadata
+            let artifacts: Artifacts
+            let steps: [PipelineStep]
+            let ocr: OcrResult?
+            let audio: ChunkAudioSummary?
 
         struct RendererConfig: Decodable, Equatable {
             let startingPosition: String
@@ -191,6 +239,8 @@ struct APIClient {
                 let combinedTextPath: String?
                 let pagesDir: String?
                 let audioPath: String?
+                let audioAlignmentPath: String?
+                let audioBenchmarksPath: String?
                 let contentTarPath: String?
                 let ocrSummaryPath: String?
             }
@@ -202,6 +252,9 @@ struct APIClient {
             let combinedTextPath: String?
             let contentTarPath: String?
             let ocrSummaryPath: String?
+            let audioPath: String?
+            let audioAlignmentPath: String?
+            let audioBenchmarksPath: String?
         }
 
         struct OcrResult: Decodable, Equatable {
@@ -215,6 +268,15 @@ struct APIClient {
                 let index: Int
                 let png: String
             }
+        }
+
+        struct ChunkAudioSummary: Decodable, Equatable {
+            let audioPath: String
+            let alignmentPath: String
+            let benchmarksPath: String
+            let textLength: Int
+            let totalDurationSeconds: Double
+            let benchmarkIntervalSeconds: Double
         }
     }
 

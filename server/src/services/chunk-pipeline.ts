@@ -8,6 +8,11 @@ import {
 } from "./download.js";
 import { runChunkOcr, type RunChunkOcrResult } from "./ocr.js";
 import type { RendererCoverageMetadata } from "../types/chunk-metadata.js";
+import {
+  generateChunkPreviewAudio,
+  recordChunkAudioArtifacts,
+  type ChunkAudioSummary,
+} from "./elevenlabs-audio.js";
 
 type PipelineStep = "download" | "ocr";
 
@@ -38,6 +43,7 @@ export type ChunkPipelineState = {
   artifacts: ChunkArtifacts;
   steps: PipelineStep[];
   ocr?: RunChunkOcrResult;
+  audio?: ChunkAudioSummary;
 };
 
 export async function runChunkPipeline(
@@ -64,6 +70,7 @@ export async function runChunkPipeline(
   }
 
   let ocrResult: RunChunkOcrResult | undefined;
+  let audioResult: ChunkAudioSummary | undefined;
   if (steps.includes("ocr")) {
     ocrResult = await runChunkOcr({
       chunkId: downloadResult.chunkId,
@@ -73,6 +80,38 @@ export async function runChunkPipeline(
       startPage: options.ocr?.startPage,
       maxPages: options.ocr?.maxPages,
     });
+
+    if (ocrResult?.combinedTextPath) {
+      const targetRange = downloadResult.chunkMetadata.ranges.find(
+        (range) => range.id === downloadResult.chunkId,
+      );
+      if (targetRange) {
+        const combinedTextPath =
+          ocrResult.combinedTextPath ?? targetRange.artifacts.combinedTextPath;
+        if (combinedTextPath) {
+          audioResult = await generateChunkPreviewAudio({
+            asin: downloadResult.asin,
+            chunkId: downloadResult.chunkId,
+            chunkDir: downloadResult.chunkDir,
+            range: targetRange,
+            combinedTextPath,
+          });
+
+          await recordChunkAudioArtifacts({
+            metadataPath: downloadResult.metadataPath,
+            metadata: downloadResult.chunkMetadata,
+            chunkId: downloadResult.chunkId,
+            summary: audioResult,
+          });
+
+          downloadResult.artifacts.audioPath = audioResult.audioPath;
+          downloadResult.artifacts.audioAlignmentPath =
+            audioResult.alignmentPath;
+          downloadResult.artifacts.audioBenchmarksPath =
+            audioResult.benchmarksPath;
+        }
+      }
+    }
   }
 
   return {
@@ -88,6 +127,7 @@ export async function runChunkPipeline(
     artifacts: downloadResult.artifacts,
     steps,
     ...(ocrResult ? { ocr: ocrResult } : {}),
+    ...(audioResult ? { audio: audioResult } : {}),
   };
 }
 
