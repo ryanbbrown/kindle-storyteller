@@ -10,7 +10,7 @@
 ## Instructions for Use
 1. Start the TLS proxy:
    ```bash
-   cd /Users/ryanbrown/code/kindle-ai-audiobook/tls-client-api/dist
+   cd kindle-ai-audiobook/tls-client-api/dist
    ./tls-client-api-darwin-arm64-
    ```
 2. Run the Fastify backend (from the repo root):
