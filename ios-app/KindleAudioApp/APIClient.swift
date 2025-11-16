@@ -177,112 +177,26 @@ struct APIClient {
 
     struct PipelineRequest: Encodable {
         let startingPosition: String
-        let numPages: Int?
-        let skipPages: Int?
-        let steps: [PipelineStep]?
-        let ocr: OcrOptions?
-
-        struct OcrOptions: Encodable {
-            let startPage: Int?
-            let maxPages: Int?
-        }
     }
 
-        struct PipelineResponse: Decodable, Equatable {
-            let asin: String
-            let chunkId: String
-            let rendererConfig: RendererConfig
-            let chunkDir: String
-            let metadataPath: String
-            let chunkMetadata: ChunkMetadata
-            let artifacts: Artifacts
-            let steps: [PipelineStep]
-            let ocr: OcrResult?
-            let audio: ChunkAudioSummary?
+    struct PipelineResponse: Decodable, Equatable {
+        let asin: String
+        let chunkId: String
+        let steps: [PipelineStep]
+        let byteRange: ByteRange
+        let artifactsDir: String
+        let audioDurationSeconds: Double?
+    }
 
-        struct RendererConfig: Decodable, Equatable {
-            let startingPosition: String
-            let numPage: String
-            let skipPageCount: String
-        }
-
-        struct ChunkMetadata: Decodable, Equatable {
-            let asin: String
-            let updatedAt: String
-            let ranges: [Range]
-
-            struct Range: Decodable, Equatable {
-                let id: String
-                let start: RangeBound
-                let end: RangeBound
-                let pages: RangePages?
-                let artifacts: RangeArtifacts
-                let createdAt: String
-                let updatedAt: String?
-            }
-
-            struct RangeBound: Decodable, Equatable {
-                let raw: String
-                let offset: Int
-                let normalized: String?
-            }
-
-            struct RangePages: Decodable, Equatable {
-                let count: Int
-                let indexStart: Int?
-                let indexEnd: Int?
-            }
-
-            struct RangeArtifacts: Decodable, Equatable {
-                let extractDir: String?
-                let pngDir: String?
-                let combinedTextPath: String?
-                let pagesDir: String?
-                let audioPath: String?
-                let audioAlignmentPath: String?
-                let audioBenchmarksPath: String?
-                let contentTarPath: String?
-                let ocrSummaryPath: String?
-            }
-        }
-
-        struct Artifacts: Decodable, Equatable {
-            let extractDir: String
-            let pagesDir: String
-            let combinedTextPath: String?
-            let contentTarPath: String?
-            let ocrSummaryPath: String?
-            let audioPath: String?
-            let audioAlignmentPath: String?
-            let audioBenchmarksPath: String?
-        }
-
-        struct OcrResult: Decodable, Equatable {
-            let pages: [Page]
-            let totalPages: Int
-            let processedPages: Int
-            let combinedTextPath: String?
-            let ocrEnabled: Bool
-
-            struct Page: Decodable, Equatable {
-                let index: Int
-                let png: String
-            }
-        }
-
-        struct ChunkAudioSummary: Decodable, Equatable {
-            let audioPath: String
-            let alignmentPath: String
-            let benchmarksPath: String
-            let textLength: Int
-            let totalDurationSeconds: Double
-            let benchmarkIntervalSeconds: Double
-        }
+    struct ByteRange: Decodable, Equatable {
+        let startOffset: Int
+        let endOffset: Int
     }
 
     enum PipelineStep: String, Codable, Equatable {
         case download
         case ocr
+        case audio
     }
 
     struct EmptyResponse: Decodable {

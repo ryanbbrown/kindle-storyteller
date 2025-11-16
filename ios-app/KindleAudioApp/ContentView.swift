@@ -13,9 +13,6 @@ struct ContentView: View {
     @State private var latestTextChunk: APIClient.TextResponse?
     @State private var statusLog: [String] = []
     @State private var isPerformingRequest = false
-    @State private var renderNumPages: Int = 5
-    @State private var renderSkipPages: Int = 0
-    @State private var ocrMaxPages: Int = 2
     @State private var textStart: Int = 0
     @State private var textLength: Int = 500
     @State private var manualStartingPosition: String = ""
@@ -30,14 +27,13 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 24) {
                 headerSection
                 bookMetadataSection
-                ocrConfigurationSection
+                pipelineConfigurationSection
                 textConfigurationSection
                 actionButtonsSection
                 sessionInfoSection
                 booksSection
                 pipelineSummarySection
                 audioPreviewSection
-                ocrResultsSection
                 textOutputSection
                 logSection
             }
@@ -141,13 +137,9 @@ struct ContentView: View {
         }
     }
 
-    private var ocrConfigurationSection: some View {
-        GroupBox("OCR Options") {
+    private var pipelineConfigurationSection: some View {
+        GroupBox("Pipeline Options") {
             VStack(alignment: .leading, spacing: 12) {
-                Stepper("Pages to render: \(renderNumPages)", value: $renderNumPages, in: 1...20)
-                Stepper("Skip pages: \(renderSkipPages)", value: $renderSkipPages, in: 0...20)
-                Stepper("Max pages to OCR: \(ocrMaxPages == 0 ? "all" : String(ocrMaxPages))", value: $ocrMaxPages, in: 0...20)
-                    .help("Set to 0 to process all pages")
                 Toggle("Use manual starting position", isOn: $useManualStartingPosition)
                 if useManualStartingPosition {
                     TextField("Enter starting position (e.g. 3698;0 or 210769)", text: $manualStartingPosition)
@@ -239,23 +231,15 @@ struct ContentView: View {
                     Text("Chunk ID: \(pipeline.chunkId)")
                         .font(.caption)
 
-                    if let range = pipeline.chunkMetadata.ranges.first {
-                        Text("Positions: \(range.start.offset) → \(range.end.offset)")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
+                    Text("Positions: \(pipeline.byteRange.startOffset) → \(pipeline.byteRange.endOffset)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
 
                     Text("Steps: \(pipeline.steps.map { $0.displayName }.joined(separator: ", "))")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
 
-                    if let combinedPath = pipeline.ocr?.combinedTextPath ?? pipeline.artifacts.combinedTextPath {
-                        Text("Combined text: \(combinedPath)")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Text("Artifacts stored at \(pipeline.artifacts.extractDir)")
+                    Text("Artifacts stored at \(pipeline.artifactsDir)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -268,9 +252,9 @@ struct ContentView: View {
 
     private var audioPreviewSection: some View {
         GroupBox("Audio Preview") {
-            if let pipeline = latestPipeline, let audio = pipeline.audio {
+            if let pipeline = latestPipeline, let duration = pipeline.audioDurationSeconds {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Duration: \(formatDuration(audio.totalDurationSeconds)) • Characters: \(audio.textLength)")
+                    Text("Duration: \(formatDuration(duration))")
                         .font(.caption)
 
                     if let url = downloadedAudioURL {
@@ -463,11 +447,7 @@ struct ContentView: View {
             defer { isPerformingRequest = false }
 
             let request = APIClient.PipelineRequest(
-                startingPosition: startingPosition,
-                numPages: renderNumPages,
-                skipPages: renderSkipPages,
-                steps: [.download, .ocr],
-                ocr: .init(startPage: 0, maxPages: ocrMaxPages > 0 ? ocrMaxPages : nil)
+                startingPosition: startingPosition
             )
 
             latestTextChunk = nil
@@ -479,11 +459,7 @@ struct ContentView: View {
             log("Pipeline steps completed: \(stepSummary)")
 
             if response.steps.contains(.ocr) {
-                if let ocr = response.ocr {
-                    log("Pipeline finished. OCR processed \(ocr.processedPages)/\(ocr.totalPages) pages (chunkId=\(response.chunkId)).")
-                } else {
-                    log("Pipeline finished without OCR results (likely reused cache).")
-                }
+                log("Pipeline finished. OCR completed for chunk \(response.chunkId).")
             } else {
                 log("Pipeline finished. chunkId=\(response.chunkId)")
             }
@@ -525,7 +501,7 @@ struct ContentView: View {
 
     @MainActor
     private func downloadAudioPreview() async {
-        guard let pipeline = latestPipeline, pipeline.audio != nil else {
+        guard let pipeline = latestPipeline, pipeline.audioDurationSeconds != nil else {
             log("Audio preview is not available yet. Run the pipeline first.")
             return
         }
@@ -696,40 +672,6 @@ private func ensureSession(client: APIClient) async throws -> String {
 
         return raw
     }
-    private var ocrResultsSection: some View {
-        GroupBox("OCR Results") {
-            if let pipeline = latestPipeline, let ocr = pipeline.ocr {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Pages processed: \(ocr.processedPages) / \(ocr.totalPages)")
-                        .font(.caption)
-                    Text("Chunk ID: \(pipeline.chunkId)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Text("OCR enabled: \(ocr.ocrEnabled ? "yes" : "no")")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-
-                    if let combined = ocr.combinedTextPath {
-                        Text("Combined text: \(combined)")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if let firstPage = ocr.pages.first {
-                        Text("Sample page: index \(firstPage.index)")
-                            .font(.caption)
-                        Text(firstPage.png)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            } else {
-                Text("OCR results are not available yet.")
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
     private var textOutputSection: some View {
         GroupBox("Text Chunk") {
             if let latestTextChunk {

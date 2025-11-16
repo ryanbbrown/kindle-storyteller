@@ -34,7 +34,7 @@ All API buttons ultimately call helpers in `ContentView.swift`:
 
 - **Create Session** → `createSession()`: wraps `ensureSession()`. It builds the payload from captured values and POSTs `/session`. The session ID is cached so future calls reuse it.
 - **Fetch Books** → `fetchBooks()`: GETs `/books` so the UI can display cached Kindle titles for the signed-in account.
-- **Start Audiobook** → `startAudiobookPipeline()`: POSTs `/books/{asin}/pipeline` with the captured starting position, render steppers (`numPages`, `skipPages`), and optional OCR limits. The server responds with the consolidated chunk/metadata/OCR payload.
+- **Start Audiobook** → `startAudiobookPipeline()`: POSTs `/books/{asin}/pipeline` with the captured starting position (and optional manual override). The server responds with the consolidated chunk/metadata/OCR payload.
 - **Get Text Chunk** → `fetchTextChunk()`: GET `/books/{asin}/text` with `start`/`length` stepper values. It prefers the last pipeline chunk ID and bumps `start` by `bytesRead` to stream sequential slices.
 
 Status updates are appended to the “Status Log” box so you can verify each step without diving into the Xcode console.
