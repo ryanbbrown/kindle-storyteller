@@ -10,17 +10,14 @@ export type ElevenLabsAudioConfig = {
   modelId: string;
   outputFormat: TextToSpeechConvertWithTimestampsRequestOutputFormat;
   benchmarkIntervalSeconds: number;
-  maxCharacters?: number;
   sentenceTarget: number;
-  sentenceMaxChars: number;
 };
-
-export const ELEVENLABS_SENTENCE_MAX_CHARS = 1200;
 
 let cachedAudioConfig: ElevenLabsAudioConfig | undefined;
 
 const DEFAULT_OUTPUT_FORMAT: TextToSpeechConvertWithTimestampsRequestOutputFormat =
   OutputFormatEnum.Mp344100128;
+export const ELEVENLABS_SENTENCE_TARGET = 1;
 
 /** Returns the cached ElevenLabs configuration derived from environment defaults. */
 export function getElevenLabsAudioConfig(): ElevenLabsAudioConfig {
@@ -31,11 +28,6 @@ export function getElevenLabsAudioConfig(): ElevenLabsAudioConfig {
   const benchmarkInterval = Number(
     process.env.ELEVENLABS_BENCHMARK_INTERVAL_SECONDS ?? "5",
   );
-  const sentenceTarget = Number(process.env.ELEVENLABS_SENTENCE_TARGET ?? "3");
-  const maxCharsRaw = process.env.ELEVENLABS_MAX_CHARACTERS;
-  const maxCharsParsed =
-    maxCharsRaw !== undefined ? Number(maxCharsRaw) : undefined;
-
   cachedAudioConfig = {
     voiceId: process.env.ELEVENLABS_VOICE_ID ?? "JBFqnCBsd6RMkjVDRZzb",
     modelId: process.env.ELEVENLABS_MODEL_ID ?? "eleven_flash_v2_5",
@@ -43,15 +35,7 @@ export function getElevenLabsAudioConfig(): ElevenLabsAudioConfig {
     benchmarkIntervalSeconds: Number.isFinite(benchmarkInterval)
       ? benchmarkInterval
       : 5,
-    maxCharacters:
-      maxCharsParsed !== undefined && Number.isFinite(maxCharsParsed)
-        ? maxCharsParsed
-        : undefined,
-    sentenceTarget:
-      Number.isFinite(sentenceTarget) && sentenceTarget > 0
-        ? sentenceTarget
-        : 3,
-    sentenceMaxChars: ELEVENLABS_SENTENCE_MAX_CHARS,
+    sentenceTarget: ELEVENLABS_SENTENCE_TARGET,
   };
 
   return cachedAudioConfig;

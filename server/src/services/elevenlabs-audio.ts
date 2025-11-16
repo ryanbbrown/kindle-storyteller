@@ -1,7 +1,6 @@
 /**
- * - generateChunkPreviewAudio: exported entry reading text, limiting it via resolveSliceCap/computeSentenceSliceLength, calling getElevenLabsClient, and persisting artifacts with buildBenchmark helpers.
+ * - generateChunkPreviewAudio: exported entry reading text, limiting it via computeSentenceSliceLength, calling getElevenLabsClient, and persisting artifacts with buildBenchmark helpers.
  * - recordChunkAudioArtifacts: updates metadata with the paths emitted by generateChunkPreviewAudio for later reuse.
- * - resolveSliceCap: combines overrides and env caps before computeSentenceSliceLength decides the slice length.
  * - normalizeTextWithMap: preprocesses text and produces char maps consumed by generateChunkPreviewAudio and buildBenchmarks.
  * - computeSentenceSliceLength: selects the normalized text span used for TTS.
  * - buildBenchmarkTimeline: defines benchmark timestamps that collectSamples converts into alignment indices.
@@ -56,7 +55,6 @@ export type GenerateChunkAudioOptions = {
   chunkDir: string;
   range: CoverageRange;
   combinedTextPath: string;
-  maxCharactersOverride?: number;
 };
 
 /** Generates preview audio plus metadata for a single chunk of Kindle text. */
@@ -69,7 +67,6 @@ export async function generateChunkPreviewAudio(
     chunkDir,
     range,
     combinedTextPath,
-    maxCharactersOverride,
   } = options;
 
   // Pull env-driven limits/model settings once per process.
@@ -81,15 +78,9 @@ export async function generateChunkPreviewAudio(
     normalizeTextWithMap(rawText);
 
   // Respect overrides/env caps while trying to hit the target sentence count.
-  const userCap = resolveSliceCap(
-    normalizedText.length,
-    maxCharactersOverride,
-    config.maxCharacters,
-  );
   const sliceLength = computeSentenceSliceLength(
     normalizedText,
     config.sentenceTarget,
-    Math.min(config.sentenceMaxChars, userCap),
   );
   const textForTts = normalizedText.slice(0, sliceLength);
   const charToOriginalIndex = normalizedMap.slice(0, sliceLength);
@@ -247,25 +238,6 @@ export async function recordChunkAudioArtifacts(options: {
   return metadata;
 }
 
-/** Determines the maximum character slice allowed by overrides/env caps. */
-function resolveSliceCap(
-  textLength: number,
-  override: number | undefined,
-  envCap: number | undefined,
-): number {
-  // Prefer caller overrides, fall back to env caps, otherwise use full text.
-  if (override !== undefined) {
-    if (!Number.isFinite(override)) {
-      throw new Error("Invalid max character override value");
-    }
-    return Math.min(Math.max(Math.trunc(override), 1), textLength);
-  }
-  if (envCap !== undefined) {
-    return Math.min(Math.max(envCap, 1), textLength);
-  }
-  return textLength;
-}
-
 /** Normalizes whitespace and tracks original indices for each character. */
 function normalizeTextWithMap(input: string): {
   normalized: string;
@@ -294,26 +266,25 @@ function normalizeTextWithMap(input: string): {
   return { normalized, map };
 }
 
-/** Picks a slice length that ends on the target sentence count within a cap. */
+/** Picks a slice length that ends on the target sentence count. */
 function computeSentenceSliceLength(
   text: string,
   targetSentences: number,
-  hardCap: number,
 ): number {
-  const cap = Math.max(1, Math.min(hardCap, text.length));
+  const cap = Math.max(1, text.length);
   if (!Number.isFinite(targetSentences) || targetSentences <= 0) {
     return cap;
   }
 
   let sentences = 0;
-  for (let index = 0; index < text.length && index < cap; index += 1) {
+  for (let index = 0; index < cap; index += 1) {
     const char = text[index];
     if (char === "." || char === "!" || char === "?") {
       sentences += 1;
       if (sentences >= targetSentences) {
         let end = index + 1;
         // Finish the sentence but skip trailing whitespace.
-        while (end < text.length && end < cap && /\s/.test(text[end])) {
+        while (end < cap && /\s/.test(text[end])) {
           end += 1;
         }
         return Math.min(Math.max(end, 1), cap);

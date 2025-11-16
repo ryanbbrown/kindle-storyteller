@@ -15,7 +15,7 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 async function main() {
-  const [asinArg, chunkIdArg, maxCharsArg] = process.argv.slice(2);
+  const [asinArg, chunkIdArg] = process.argv.slice(2);
 
   const dataDir = path.resolve(__dirname, "../data/books");
   const asin = asinArg ?? (await resolveDefaultAsin(dataDir));
@@ -38,22 +38,12 @@ async function main() {
 
   const combinedTextPath = await resolveCombinedTextPath(chunkDir, range);
 
-  let maxCharactersOverride: number | undefined;
-  if (maxCharsArg !== undefined) {
-    const parsed = Number(maxCharsArg);
-    if (!Number.isFinite(parsed)) {
-      throw new Error(`Invalid max character argument: ${maxCharsArg}`);
-    }
-    maxCharactersOverride = parsed;
-  }
-
   const summary = await generateChunkPreviewAudio({
     asin,
     chunkId: range.id,
     chunkDir,
     range,
     combinedTextPath,
-    maxCharactersOverride,
   });
 
   await recordChunkAudioArtifacts({
