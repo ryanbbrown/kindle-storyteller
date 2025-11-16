@@ -1,3 +1,16 @@
+/**
+ * - ensureChunkDownloaded: exported entry that prepares renderer inputs then calls downloadFreshChunk and resolveArtifacts to return artifacts.
+ * - downloadFreshChunk: performs the renderer HTTP request, writes artifacts/metadata, and relies on helpers:
+ *   - normalizeRenderOptions: coerces provided render options into renderer-friendly strings.
+ *   - buildRendererUrl: builds the Kindle renderer URL with query parameters derived from the normalized config.
+ *   - readJsonSafe: loads JSON files from the extracted tar, tolerating missing files.
+ *   - findPageDataFile: locates the canonical page_data JSON within extracted renderer output.
+ *   - normalizePagePosition: reshapes renderer start/end entries with help from parsePositionOffset.
+ *   - parsePositionOffset: validates and truncates offsets coming from renderer metadata.
+ *   - coerceBodyToBuffer: converts varying HTTP body encodings into a Buffer for tar extraction.
+ *   - buildChunkId: builds deterministic chunk ids from normalized start/end positions.
+ * - resolveArtifacts: merges metadata-provided artifact paths with default chunk directory fallbacks.
+ */
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -6,10 +19,7 @@ import { promisify } from "node:util";
 import type { Kindle } from "kindle-api";
 
 import { env } from "../env.js";
-import {
-  readChunkMetadata,
-  writeChunkMetadata,
-} from "./chunk-metadata-service.js";
+import { writeChunkMetadata } from "./chunk-metadata-service.js";
 import type {
   CoverageRange,
   RendererCoverageMetadata,
@@ -43,7 +53,6 @@ export type ChunkArtifacts = {
   pagesDir: string;
   combinedTextPath: string;
   contentTarPath: string;
-  ocrSummaryPath?: string;
   audioPath?: string;
   audioAlignmentPath?: string;
   audioBenchmarksPath?: string;
@@ -54,46 +63,20 @@ export type EnsureChunkDownloadedResult = {
   chunkId: string;
   chunkDir: string;
   metadataPath: string;
-  rendererConfig: RendererConfig;
-  manifest: unknown;
-  rendererMetadata: unknown;
-  toc: unknown;
   chunkMetadata: RendererCoverageMetadata;
   artifacts: ChunkArtifacts;
 };
 
-type ExistingChunk = {
-  chunkId: string;
-  chunkDir: string;
-  metadataPath: string;
-  metadata: RendererCoverageMetadata;
-  range: CoverageRange;
-};
-
+/** Ensures a Kindle chunk exists locally by downloading it when needed. */
 export async function ensureChunkDownloaded(
   options: EnsureChunkDownloadedOptions
 ): Promise<EnsureChunkDownloadedResult> {
   const { asin, kindle, renderingToken } = options;
   const rendererConfig = normalizeRenderOptions(options.renderOptions);
 
-  const startOffset = parseNormalizedOffset(rendererConfig.startingPosition);
-  const requestPositionId = extractPositionIdFromInput(rendererConfig.startingPosition);
-
   const asinDir = path.join(env.storageDir, asin);
   const chunksRoot = path.join(asinDir, "chunks");
   await fs.mkdir(chunksRoot, { recursive: true });
-
-  const existing = await findExistingChunk({ asin, startOffset, requestPositionId, chunksRoot });
-  if (existing) {
-    const reuse = await buildResultFromExisting({
-      asin,
-      rendererConfig,
-      existing,
-    });
-    if (reuse) {
-      return reuse;
-    }
-  }
 
   return await downloadFreshChunk({
     asin,
@@ -104,112 +87,7 @@ export async function ensureChunkDownloaded(
   });
 }
 
-async function findExistingChunk(options: {
-  asin: string;
-  startOffset: number;
-  requestPositionId?: number;
-  chunksRoot: string;
-}): Promise<ExistingChunk | undefined> {
-  const { startOffset, requestPositionId, chunksRoot } = options;
-
-  let entries: string[];
-  try {
-    entries = await fs.readdir(chunksRoot);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return undefined;
-    }
-    throw error;
-  }
-
-  for (const entry of entries) {
-    const chunkDir = path.join(chunksRoot, entry);
-    const metadataPath = path.join(chunkDir, METADATA_FILENAME);
-    const metadata = await readChunkMetadata(metadataPath);
-    if (!metadata) {
-      continue;
-    }
-
-    let range: CoverageRange | undefined;
-
-    for (const candidate of metadata.ranges) {
-      if (
-        requestPositionId !== undefined &&
-        candidate.start.positionId !== undefined &&
-        candidate.start.positionId === requestPositionId
-      ) {
-        range = candidate;
-        break;
-      }
-
-      if (
-        requestPositionId !== undefined &&
-        candidate.start.positionId !== undefined &&
-        candidate.end.positionId !== undefined &&
-        requestPositionId >= candidate.start.positionId &&
-        requestPositionId <= candidate.end.positionId
-      ) {
-        range = candidate;
-        break;
-      }
-
-      if (candidate.start.offset === startOffset) {
-        range = candidate;
-        break;
-      }
-    }
-
-    if (!range) {
-      continue;
-    }
-
-    return { chunkId: entry, chunkDir, metadataPath, metadata, range };
-  }
-
-  return undefined;
-}
-
-async function buildResultFromExisting(options: {
-  asin: string;
-  rendererConfig: RendererConfig;
-  existing: ExistingChunk;
-}): Promise<EnsureChunkDownloadedResult | undefined> {
-  const { asin, rendererConfig, existing } = options;
-  const { chunkDir, chunkId, metadata, metadataPath, range } = existing;
-
-  const artifacts = resolveArtifacts(range, chunkDir);
-
-  const [extractOk, tarOk] = await Promise.all([
-    pathExists(artifacts.extractDir, true),
-    pathExists(artifacts.contentTarPath, false),
-  ]);
-
-  if (!extractOk || !tarOk) {
-    return undefined;
-  }
-
-  const manifest = await readJsonSafe(path.join(artifacts.extractDir, "manifest.json"));
-  const rendererMetadata = await readJsonSafe(path.join(artifacts.extractDir, "metadata.json"));
-  const toc = await readJsonSafe(path.join(artifacts.extractDir, "toc.json"));
-
-  if (manifest === null || rendererMetadata === null || toc === null) {
-    return undefined;
-  }
-
-  return {
-    asin,
-    chunkId,
-    chunkDir,
-    metadataPath,
-    rendererConfig,
-    manifest,
-    rendererMetadata,
-    toc,
-    chunkMetadata: metadata,
-    artifacts,
-  };
-}
-
+/** Downloads a chunk tarball, extracts it, and writes renderer metadata. */
 async function downloadFreshChunk(options: {
   asin: string;
   kindle: Kindle;
@@ -306,10 +184,6 @@ async function downloadFreshChunk(options: {
       chunkId,
       chunkDir,
       metadataPath,
-      rendererConfig,
-      manifest,
-      rendererMetadata,
-      toc,
       chunkMetadata,
       artifacts: resolveArtifacts(range, chunkDir),
     };
@@ -318,6 +192,7 @@ async function downloadFreshChunk(options: {
   }
 }
 
+/** Converts renderer options into the exact string fields the renderer expects. */
 function normalizeRenderOptions(input: RendererConfigInput): RendererConfig {
   return {
     startingPosition: String(input.startingPosition),
@@ -326,29 +201,7 @@ function normalizeRenderOptions(input: RendererConfigInput): RendererConfig {
   };
 }
 
-function parseNormalizedOffset(raw: string): number {
-  const normalized = normalizePositionValue(raw);
-  const offset = Number.parseInt(normalized, 10);
-  if (!Number.isFinite(offset)) {
-    throw new Error("Unable to parse starting position offset");
-  }
-  return offset;
-}
-
-function extractPositionIdFromInput(raw: string): number | undefined {
-  const trimmed = raw.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-
-  if (/^\d+$/.test(trimmed)) {
-    const parsed = Number.parseInt(trimmed, 10);
-    return Number.isFinite(parsed) ? parsed : undefined;
-  }
-
-  return undefined;
-}
-
+/** Builds the Kindle renderer URL for the requested ASIN and config. */
 function buildRendererUrl(asin: string, config: RendererConfig): string {
   const params = new URLSearchParams({
     version: "3.0",
@@ -379,6 +232,7 @@ function buildRendererUrl(asin: string, config: RendererConfig): string {
   return `https://read.amazon.com/renderer/render?${params.toString()}`;
 }
 
+/** Reads JSON if the file exists, otherwise returns null when missing. */
 async function readJsonSafe(filePath: string): Promise<unknown | null> {
   try {
     const content = await fs.readFile(filePath, "utf8");
@@ -391,6 +245,7 @@ async function readJsonSafe(filePath: string): Promise<unknown | null> {
   }
 }
 
+/** Locates the renderer page_data JSON file inside the extraction directory. */
 async function findPageDataFile(extractDir: string): Promise<string> {
   const entries = await fs.readdir(extractDir);
   const direct = entries.find((entry) => entry === "page_data.json");
@@ -408,6 +263,7 @@ async function findPageDataFile(extractDir: string): Promise<string> {
   return path.join(extractDir, match);
 }
 
+/** Normalizes a renderer page entry into the CoverageRange start/end format. */
 function normalizePagePosition(
   pageEntry: unknown,
   kind: "start" | "end"
@@ -422,12 +278,7 @@ function normalizePagePosition(
 
   const raw = page[key];
   const fallback = page[positionIdKey];
-
-  const normalized = normalizePositionValue(raw ?? fallback);
-  const offset = Number.parseInt(normalized, 10);
-  if (!Number.isFinite(offset)) {
-    throw new Error(`Unable to parse ${kind} position offset`);
-  }
+  const offset = parsePositionOffset(raw ?? fallback);
 
   const positionIdValue = page[positionIdKey];
   const positionId = typeof positionIdValue === "number" ? Math.trunc(positionIdValue) : undefined;
@@ -435,46 +286,34 @@ function normalizePagePosition(
   return {
     raw: raw !== undefined ? String(raw) : "",
     offset,
-    normalized,
+    normalized: offset.toString(),
     positionId,
   };
 }
 
-function normalizePositionValue(value: unknown): string {
-  if (value === undefined || value === null) {
-    throw new Error("Position value missing");
-  }
-
+/** Parses a renderer offset string/number into a sanitized integer. */
+function parsePositionOffset(value: unknown): number {
   if (typeof value === "number") {
     if (!Number.isFinite(value)) {
       throw new Error("Non-finite numeric position value");
     }
-    return Math.trunc(value).toString();
+    return Math.trunc(value);
   }
-
   if (typeof value === "string") {
     const trimmed = value.trim();
     if (!trimmed) {
       throw new Error("Empty position string");
     }
-    if (trimmed.includes(";")) {
-      const [majorRaw, minorRaw = ""] = trimmed.split(";", 2);
-      const majorDigits = majorRaw.replace(/\D+/g, "");
-      const minorDigits = minorRaw.replace(/\D+/g, "");
-      if (majorDigits) {
-        return `${Number.parseInt(majorDigits, 10)}${minorDigits.padStart(3, "0")}`;
-      }
+    const parsed = Number.parseInt(trimmed, 10);
+    if (!Number.isFinite(parsed)) {
+      throw new Error(`Unable to parse numeric position from string: ${value}`);
     }
-    const digits = trimmed.replace(/\D+/g, "");
-    if (digits) {
-      return digits;
-    }
-    throw new Error(`Unable to normalize position string: ${value}`);
+    return Math.trunc(parsed);
   }
-
-  throw new Error(`Unsupported position value type: ${String(value)}`);
+  throw new Error("Position value missing");
 }
 
+/** Converts the renderer body payload into a Buffer regardless of encoding. */
 function coerceBodyToBuffer(body: unknown): Buffer {
   if (Buffer.isBuffer(body)) {
     return body;
@@ -489,6 +328,7 @@ function coerceBodyToBuffer(body: unknown): Buffer {
   throw new Error("Unexpected renderer response body type");
 }
 
+/** Builds a deterministic chunk id from renderer start/end metadata ranges. */
 function buildChunkId(start: CoverageRange["start"], end: CoverageRange["end"]): string {
   const startId = typeof start.positionId === "number" ? Math.trunc(start.positionId) : undefined;
   const endId = typeof end.positionId === "number" ? Math.trunc(end.positionId) : undefined;
@@ -498,7 +338,11 @@ function buildChunkId(start: CoverageRange["start"], end: CoverageRange["end"]):
   return `chunk_pos_${start.offset}_${end.offset}`;
 }
 
-function resolveArtifacts(range: CoverageRange, chunkDir: string): ChunkArtifacts {
+/** Builds chunk artifact paths by combining stored metadata defaults and fallbacks. */
+export function resolveArtifacts(
+  range: CoverageRange,
+  chunkDir: string,
+): ChunkArtifacts {
   const defaultExtractDir = path.join(chunkDir, "extracted");
   const defaultPagesDir = path.join(chunkDir, "pages");
   const defaultCombined = path.join(chunkDir, "full-content.txt");
@@ -509,21 +353,8 @@ function resolveArtifacts(range: CoverageRange, chunkDir: string): ChunkArtifact
     pagesDir: range.artifacts.pagesDir ?? range.artifacts.pngDir ?? defaultPagesDir,
     combinedTextPath: range.artifacts.combinedTextPath ?? defaultCombined,
     contentTarPath: range.artifacts.contentTarPath ?? defaultTar,
-    ocrSummaryPath: range.artifacts.ocrSummaryPath,
     audioPath: range.artifacts.audioPath,
     audioAlignmentPath: range.artifacts.audioAlignmentPath,
     audioBenchmarksPath: range.artifacts.audioBenchmarksPath,
   };
-}
-
-async function pathExists(targetPath: string, expectDirectory: boolean): Promise<boolean> {
-  try {
-    const stats = await fs.stat(targetPath);
-    return expectDirectory ? stats.isDirectory() : stats.isFile();
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return false;
-    }
-    throw error;
-  }
 }

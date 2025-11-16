@@ -1,12 +1,18 @@
+/**
+ * - generateChunkPreviewAudio: exported entry reading text, limiting it via resolveSliceCap/computeSentenceSliceLength, calling getElevenLabsClient, and persisting artifacts with buildBenchmark helpers.
+ * - recordChunkAudioArtifacts: updates metadata with the paths emitted by generateChunkPreviewAudio for later reuse.
+ * - resolveSliceCap: combines overrides and env caps before computeSentenceSliceLength decides the slice length.
+ * - normalizeTextWithMap: preprocesses text and produces char maps consumed by generateChunkPreviewAudio and buildBenchmarks.
+ * - computeSentenceSliceLength: selects the normalized text span used for TTS.
+ * - buildBenchmarkTimeline: defines benchmark timestamps that collectSamples converts into alignment indices.
+ * - collectSamples: maps alignment data to benchmark entries before buildBenchmarks composes Kindle offsets.
+ * - buildBenchmarks: ties timestamps to Kindle offsets, leveraging convertOffsetToRaw and normalization maps.
+ * - convertOffsetToRaw: converts numeric offsets into Kindle "major;minor" strings for metadata.
+ * - getElevenLabsClient: lazily creates the ElevenLabs SDK client consumed by generateChunkPreviewAudio.
+ */
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
-import {
-  TextToSpeechConvertWithTimestampsRequestOutputFormat as OutputFormatEnum,
-  type TextToSpeechConvertWithTimestampsRequestOutputFormat,
-} from "@elevenlabs/elevenlabs-js/api/resources/textToSpeech/types/TextToSpeechConvertWithTimestampsRequestOutputFormat.js";
 import fs from "node:fs/promises";
 import path from "node:path";
-
-import "../env.js";
 
 import {
   readChunkMetadata,
@@ -16,21 +22,7 @@ import type {
   CoverageRange,
   RendererCoverageMetadata,
 } from "../types/chunk-metadata.js";
-
-// TODO: this file could probably be simplified a bit
-
-
-type ElevenLabsAudioConfig = {
-  voiceId: string;
-  modelId: string;
-  outputFormat: TextToSpeechConvertWithTimestampsRequestOutputFormat;
-  benchmarkIntervalSeconds: number;
-  maxCharacters?: number;
-  sentenceTarget: number;
-  sentenceMaxChars: number;
-};
-
-let cachedAudioConfig: ElevenLabsAudioConfig | undefined;
+import { getElevenLabsAudioConfig } from "../config/elevenlabs.js";
 
 // Reuse a single SDK client so we do not re-auth on every request.
 let cachedElevenLabsClient: ElevenLabsClient | undefined;
@@ -81,7 +73,7 @@ export async function generateChunkPreviewAudio(
   } = options;
 
   // Pull env-driven limits/model settings once per process.
-  const config = getAudioConfig();
+  const config = getElevenLabsAudioConfig();
 
   await fs.access(combinedTextPath);
   const rawText = await fs.readFile(combinedTextPath, "utf8");
@@ -472,60 +464,4 @@ function getElevenLabsClient(): ElevenLabsClient {
   // Lazily instantiate the SDK with the user's API key.
   cachedElevenLabsClient = new ElevenLabsClient({ apiKey });
   return cachedElevenLabsClient;
-}
-
-/** Reads and caches all env-driven config for audio generation. */
-function getAudioConfig(): ElevenLabsAudioConfig {
-  if (cachedAudioConfig) {
-    return cachedAudioConfig;
-  }
-
-  const benchmarkInterval = Number(
-    process.env.ELEVENLABS_BENCHMARK_INTERVAL_SECONDS ?? "5",
-  );
-  const sentenceTarget = Number(process.env.ELEVENLABS_SENTENCE_TARGET ?? "3");
-  const sentenceMaxChars = Number(
-    process.env.ELEVENLABS_SENTENCE_MAX_CHARS ?? "1200",
-  );
-  const maxCharsRaw = process.env.ELEVENLABS_MAX_CHARACTERS;
-  const maxCharsParsed =
-    maxCharsRaw !== undefined ? Number(maxCharsRaw) : undefined;
-
-  // Normalize env vars once and reuse to avoid repeated parsing.
-  cachedAudioConfig = {
-    voiceId: process.env.ELEVENLABS_VOICE_ID ?? "JBFqnCBsd6RMkjVDRZzb",
-    modelId: process.env.ELEVENLABS_MODEL_ID ?? "eleven_flash_v2_5",
-    outputFormat: resolveOutputFormat(),
-    benchmarkIntervalSeconds: Number.isFinite(benchmarkInterval)
-      ? benchmarkInterval
-      : 5,
-    maxCharacters:
-      maxCharsParsed !== undefined && Number.isFinite(maxCharsParsed)
-        ? maxCharsParsed
-        : undefined,
-    sentenceTarget:
-      Number.isFinite(sentenceTarget) && sentenceTarget > 0
-        ? sentenceTarget
-        : 3,
-    sentenceMaxChars:
-      Number.isFinite(sentenceMaxChars) && sentenceMaxChars > 0
-        ? sentenceMaxChars
-        : 1200,
-  };
-
-  return cachedAudioConfig;
-}
-
-/** Validates ELEVENLABS_OUTPUT_FORMAT and falls back to a default enum. */
-function resolveOutputFormat(): TextToSpeechConvertWithTimestampsRequestOutputFormat {
-  const raw = process.env.ELEVENLABS_OUTPUT_FORMAT;
-  const allowed = Object.values(OutputFormatEnum);
-  if (
-    raw &&
-    (allowed as readonly string[]).includes(raw)
-  ) {
-    // TypeScript cannot narrow strings to enums automatically.
-    return raw as TextToSpeechConvertWithTimestampsRequestOutputFormat;
-  }
-  return OutputFormatEnum.Mp344100128;
 }

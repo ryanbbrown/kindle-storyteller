@@ -1,8 +1,13 @@
+/**
+ * - readChunkMetadata: shared helper for services to load chunk metadata JSON if present.
+ * - writeChunkMetadata: persists updated chunk metadata so download/OCR/audio modules stay in sync.
+ */
 import fs from "node:fs/promises";
 import path from "node:path";
 
 import type { RendererCoverageMetadata } from "../types/chunk-metadata.js";
 
+/** Reads chunk metadata JSON if it exists, otherwise returns undefined. */
 export async function readChunkMetadata(
   metadataPath: string
 ): Promise<RendererCoverageMetadata | undefined> {
@@ -22,6 +27,7 @@ export async function readChunkMetadata(
   }
 }
 
+/** Persists the provided chunk metadata JSON to disk. */
 export async function writeChunkMetadata(
   metadataPath: string,
   metadata: RendererCoverageMetadata

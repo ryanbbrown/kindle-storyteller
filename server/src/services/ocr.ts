@@ -1,3 +1,10 @@
+/**
+ * - runChunkOcr: exported entry that invokes executeOcrPipeline and reuses its output for callers.
+ * - executeOcrPipeline: tries uv/python commands, parses stdout via parseSummary, flattens files with reorganizePages, and persists results via updateChunkMetadata.
+ * - reorganizePages: reshapes glyph output into a flat pages directory consumed by runChunkOcr callers.
+ * - updateChunkMetadata: writes OCR artifact paths back to metadata for later stages.
+ * - parseSummary: interprets JSON emitted by the OCR pipeline before executeOcrPipeline processes it.
+ */
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -16,15 +23,12 @@ const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "../../..");
 const glyphExtractionDir = path.join(projectRoot, "glyph-extraction");
 
-const SUMMARY_FILENAME = "ocr-summary.json";
-
 type PipelineSummary = {
   total_pages: number;
   processed_pages: number;
   pages: Array<{
     index: number;
     png: string;
-    text_path: string | null;
   }>;
   combined_text_path: string | null;
   ocr_enabled: boolean;
@@ -47,6 +51,7 @@ export type RunChunkOcrResult = {
   ocrEnabled: boolean;
 };
 
+/** Runs the glyph extraction OCR pipeline for a chunk and stores summary data. */
 export async function runChunkOcr(
   options: RunChunkOcrOptions
 ): Promise<RunChunkOcrResult> {
@@ -59,18 +64,6 @@ export async function runChunkOcr(
     maxPages = 5,
   } = options;
 
-  const summaryPath = path.join(chunkDir, SUMMARY_FILENAME);
-
-  const existing = await loadExistingSummary({
-    chunkId,
-    chunkDir,
-    metadataPath,
-    summaryPath,
-  });
-  if (existing) {
-    return existing;
-  }
-
   const result = await executeOcrPipeline({
     chunkId,
     chunkDir,
@@ -78,35 +71,12 @@ export async function runChunkOcr(
     metadataPath,
     startPage,
     maxPages,
-    summaryPath,
   });
 
   return result;
 }
 
-async function loadExistingSummary(options: {
-  chunkId: string;
-  chunkDir: string;
-  metadataPath: string;
-  summaryPath: string;
-}): Promise<RunChunkOcrResult | undefined> {
-  const { chunkId, chunkDir, metadataPath, summaryPath } = options;
-
-  const summary = await readSummary(summaryPath);
-  if (!summary) {
-    return undefined;
-  }
-
-  const ok = await validateSummaryArtifacts(summary);
-  if (!ok) {
-    return undefined;
-  }
-
-  await ensureSummaryPathRecorded({ metadataPath, chunkId, summaryPath });
-
-  return summary;
-}
-
+/** Invokes the python OCR pipeline and reshapes the resulting artifacts. */
 async function executeOcrPipeline(options: {
   chunkId: string;
   chunkDir: string;
@@ -114,7 +84,6 @@ async function executeOcrPipeline(options: {
   metadataPath: string;
   startPage: number;
   maxPages: number;
-  summaryPath: string;
 }): Promise<RunChunkOcrResult> {
   const {
     chunkId,
@@ -123,7 +92,6 @@ async function executeOcrPipeline(options: {
     metadataPath,
     startPage,
     maxPages,
-    summaryPath,
   } = options;
 
   const outputDir = chunkDir;
@@ -141,46 +109,10 @@ async function executeOcrPipeline(options: {
     String(maxPages),
   ];
 
-  const commands: Array<{ cmd: string; args: string[] }> = [
-    { cmd: "uv", args: ["run", "python", "pipeline.py", ...baseArgs] },
-    { cmd: "python", args: ["pipeline.py", ...baseArgs] },
-    { cmd: "python3", args: ["pipeline.py", ...baseArgs] },
-  ];
-
-  let lastError: Error | undefined;
-  let summary: PipelineSummary | undefined;
-
-  for (const { cmd, args } of commands) {
-    try {
-      const { stdout } = await execFileAsync(cmd, args, {
-        cwd: glyphExtractionDir,
-        env: process.env,
-        encoding: "utf8",
-      } as const);
-
-      summary = parseSummary(stdout);
-      break;
-    } catch (error) {
-      const err = error as NodeJS.ErrnoException & { stderr?: string };
-      if (err.code === "ENOENT") {
-        lastError = err;
-        continue;
-      }
-      const details = err.stderr ? `${err.message}\n${err.stderr}` : err.message;
-      throw new Error(`OCR pipeline failed using ${cmd}: ${details}`);
-    }
-  }
-
-  if (!summary) {
-    throw new Error(
-      `Unable to execute OCR pipeline; ensure Python/uv is installed. Last error: ${
-        lastError?.message ?? "unknown"
-      }`
-    );
-  }
+  const summary = await runOcrCommand(baseArgs);
 
   const flattenedPages = await reorganizePages(chunkDir, chunkId, summary.pages);
-  const combinedTextPath = await relocateCombinedText(chunkId, chunkDir, summary.combined_text_path);
+  const combinedTextPath = summary.combined_text_path;
 
   const result: RunChunkOcrResult = {
     pages: flattenedPages,
@@ -190,18 +122,38 @@ async function executeOcrPipeline(options: {
     ocrEnabled: summary.ocr_enabled,
   };
 
-  await persistSummary(summaryPath, result);
   await updateChunkMetadata({
     metadataPath,
     chunkId,
     pagesDir: path.join(chunkDir, "pages"),
     combinedTextPath,
-    summaryPath,
   });
 
   return result;
 }
 
+/** Executes the glyph extraction pipeline with uv and returns its summary payload. */
+async function runOcrCommand(args: string[]): Promise<PipelineSummary> {
+  try {
+    const { stdout } = await execFileAsync(
+      "uv",
+      ["run", "python", "pipeline.py", ...args],
+      {
+        cwd: glyphExtractionDir,
+        env: process.env,
+        encoding: "utf8",
+      } as const,
+    );
+
+    return parseSummary(stdout);
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException & { stderr?: string };
+    const details = err.stderr ? `${err.message}\n${err.stderr}` : err.message;
+    throw new Error(`OCR pipeline failed: ${details}`);
+  }
+}
+
+/** Moves generated page PNGs into a flat pages directory for the chunk. */
 async function reorganizePages(
   chunkDir: string,
   chunkId: string,
@@ -237,41 +189,14 @@ async function reorganizePages(
   return result;
 }
 
-async function relocateCombinedText(
-  chunkId: string,
-  chunkDir: string,
-  combinedPath: string | null
-): Promise<string | null> {
-  if (!combinedPath) {
-    return null;
-  }
-
-  const target = path.join(chunkDir, "full-content.txt");
-  if (combinedPath === target) {
-    return target;
-  }
-
-  await fs.rename(combinedPath, target).catch(async (error) => {
-    if ((error as NodeJS.ErrnoException).code === "EXDEV") {
-      const data = await fs.readFile(combinedPath);
-      await fs.writeFile(target, data);
-      await fs.unlink(combinedPath);
-    } else if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-      throw error;
-    }
-  });
-
-  return target;
-}
-
+/** Writes OCR artifact locations back into the chunk metadata file. */
 async function updateChunkMetadata(options: {
   metadataPath: string;
   chunkId: string;
   pagesDir: string;
   combinedTextPath: string | null;
-  summaryPath: string;
 }): Promise<void> {
-  const { metadataPath, chunkId, pagesDir, combinedTextPath, summaryPath } = options;
+  const { metadataPath, chunkId, pagesDir, combinedTextPath } = options;
   const metadata = await readChunkMetadata(metadataPath);
   if (!metadata) {
     return;
@@ -286,13 +211,13 @@ async function updateChunkMetadata(options: {
   targetRange.artifacts.pngDir = pagesDir;
   targetRange.artifacts.pagesDir = pagesDir;
   targetRange.artifacts.combinedTextPath = combinedTextPath ?? undefined;
-  targetRange.artifacts.ocrSummaryPath = summaryPath;
   metadata.updatedAt = now;
   targetRange.updatedAt = now;
 
   await writeChunkMetadata(metadataPath, metadata);
 }
 
+/** Parses the OCR pipeline stdout payload into structured JSON. */
 function parseSummary(raw: string): PipelineSummary {
   try {
     return JSON.parse(raw) as PipelineSummary;
@@ -301,108 +226,4 @@ function parseSummary(raw: string): PipelineSummary {
       `Failed to parse OCR pipeline output: ${(error as Error).message}. Raw output: ${raw}`
     );
   }
-}
-
-async function persistSummary(
-  summaryPath: string,
-  result: RunChunkOcrResult
-): Promise<void> {
-  const data = {
-    ...result,
-    savedAt: new Date().toISOString(),
-  };
-  await fs.writeFile(summaryPath, JSON.stringify(data, null, 2), "utf8");
-}
-
-async function readSummary(summaryPath: string): Promise<RunChunkOcrResult | undefined> {
-  try {
-    const raw = await fs.readFile(summaryPath, "utf8");
-    const parsed = JSON.parse(raw) as Partial<RunChunkOcrResult> & {
-      pages?: Array<{ index: number; png: string }>;
-    };
-
-    if (!parsed || !Array.isArray(parsed.pages)) {
-      return undefined;
-    }
-
-    const pages = parsed.pages
-      .map((page) => ({
-        index: Number(page.index),
-        png: String(page.png),
-      }))
-      .filter((page) => Number.isFinite(page.index) && page.png.length > 0);
-
-    const totalPages = Number(parsed.totalPages);
-    const processedPages = Number(parsed.processedPages);
-    const ocrEnabled = Boolean(parsed.ocrEnabled);
-
-    if (!Number.isFinite(totalPages) || !Number.isFinite(processedPages)) {
-      return undefined;
-    }
-
-    return {
-      pages,
-      totalPages,
-      processedPages,
-      combinedTextPath:
-        typeof parsed.combinedTextPath === "string"
-          ? parsed.combinedTextPath
-          : null,
-      ocrEnabled,
-    };
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return undefined;
-    }
-    throw error;
-  }
-}
-
-async function validateSummaryArtifacts(summary: RunChunkOcrResult): Promise<boolean> {
-  const checks: Array<Promise<boolean>> = [];
-  for (const page of summary.pages) {
-    checks.push(pathExists(page.png));
-  }
-  if (summary.combinedTextPath) {
-    checks.push(pathExists(summary.combinedTextPath));
-  }
-
-  const results = await Promise.all(checks);
-  return results.every(Boolean);
-}
-
-async function pathExists(targetPath: string): Promise<boolean> {
-  try {
-    await fs.access(targetPath);
-    return true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return false;
-    }
-    throw error;
-  }
-}
-
-async function ensureSummaryPathRecorded(options: {
-  metadataPath: string;
-  chunkId: string;
-  summaryPath: string;
-}): Promise<void> {
-  const { metadataPath, chunkId, summaryPath } = options;
-  const metadata = await readChunkMetadata(metadataPath);
-  if (!metadata) {
-    return;
-  }
-  const range = metadata.ranges.find((candidate) => candidate.id === chunkId);
-  if (!range) {
-    return;
-  }
-  if (range.artifacts.ocrSummaryPath === summaryPath) {
-    return;
-  }
-
-  range.artifacts.ocrSummaryPath = summaryPath;
-  range.updatedAt = new Date().toISOString();
-  metadata.updatedAt = range.updatedAt;
-  await writeChunkMetadata(metadataPath, metadata);
 }

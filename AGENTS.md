@@ -1,15 +1,29 @@
 # General Rules
-- Always ask the user any necessary follow up questions about their intent before making changes.
-- Always create the simplest solution first; don't add excess features the user didn't mention.
+## Tools to use
 - Do NOT use ad-hoc python or jquery scripts to read or modify files. Only use built-in read and write tools, along with bash commands like grep.
+- Use uv for all python-related operations; `uv add` to install new packages, and `uv run file.py` to run files. No need to activate the venv first.
 
-# iOS App Build Check
+## How to interact
+- Always ask the user any necessary follow up questions about their intent before making changes.
+- If the user interrupts you and asks a question, IMMEDIATELY ANSWER THE QUESTION. Do not use the question as a jumping-off point for additional changes.
 
-Before landing SwiftUI changes, run an Xcode build locally to catch compiler errors:
+## How to write code
+- Do NOT program defensively; solve the user request in the simplest way possible. Don't include extra parameters that aren't currently necessary. Don't over-functionize or over-nest data structures; inline code where possible.
+- Add one-line docstrings to all TypeScript functions (e.g. `/** Description of function */`)
+- ALWAYS use existing libraries and utility functions; do NOT rewrite functions for basic language functionality
 
+
+# Build Checks
+After making changes, run builds for both the iOS app and the server to ensure that nothing is broken.
+
+## iOS App
 ```bash
 cd ios-app
 xcodebuild -scheme KindleAudioApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
 ```
 
-This mirrors the manual Xcode build (⌘B) and fails fast if the app no longer compiles.***
+## Fastify Server
+```bash
+cd server
+pnpm run build
+```

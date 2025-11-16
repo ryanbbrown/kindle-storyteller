@@ -14,13 +14,6 @@ type PipelineParams = {
 
 type PipelineBody = {
   startingPosition?: number | string;
-  numPages?: number | string;
-  skipPages?: number | string;
-  steps?: Array<"download" | "ocr">;
-  ocr?: {
-    startPage?: number;
-    maxPages?: number;
-  };
 };
 
 type PipelineResponse = ChunkPipelineState;
@@ -58,27 +51,12 @@ export async function registerPipelineRoutes(
       kindle: session.kindle,
       renderingToken: session.renderingToken,
       startingPosition,
-      numPages: request.body?.numPages,
-      skipPages: request.body?.skipPages,
-      steps: request.body?.steps,
-      ocr: request.body?.ocr,
     };
 
     try {
       const result = await runChunkPipeline(options);
       return reply.status(200).send(result);
     } catch (error) {
-      if (error instanceof Error) {
-        if (
-          error.message.includes("Unsupported pipeline step") ||
-          error.message.includes("Chunk download step was skipped")
-        ) {
-          return reply
-            .status(400)
-            .send({ message: error.message } as never);
-        }
-      }
-
       request.log.error({ err: error }, "Failed to run chunk pipeline");
       return reply
         .status(500)

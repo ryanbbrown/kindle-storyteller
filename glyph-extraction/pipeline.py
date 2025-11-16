@@ -138,7 +138,6 @@ def main() -> None:
             page_index=page_index,
         )
 
-        text_path_str = None
         if ocr_enabled:
             text_data = run_tesseract(png_path)
             if text_data:
@@ -148,14 +147,13 @@ def main() -> None:
             {
                 "index": page_index,
                 "png": str(png_path),
-                "text_path": text_path_str,
                 "chunk_id": chunk_id,
             }
         )
 
     combined_path = None
     if combined_text:
-        combined_path = output_dir / f"{chunk_id}.txt"
+        combined_path = output_dir / "full-content.txt"
         output_dir.mkdir(parents=True, exist_ok=True)
         combined_path.write_text("\n\n".join(combined_text), encoding="utf-8")
 
