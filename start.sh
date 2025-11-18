@@ -1,33 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TLS_PORT="${TLS_PROXY_PORT:-8080}"
-TLS_HEALTH_PORT="${TLS_PROXY_HEALTH_PORT:-8081}"
-TLS_AUTH_KEYS="${TLS_PROXY_AUTH_KEYS:-}"
-TLS_PRIMARY_KEY="${TLS_PROXY_API_KEY:-}"
+TLS_PORT=8080
+TLS_HEALTH_PORT=8081
+TLS_SERVER_API_KEY="${TLS_SERVER_API_KEY:-}"
 
-if [[ -z "$TLS_AUTH_KEYS" && -n "$TLS_PRIMARY_KEY" ]]; then
-  TLS_AUTH_KEYS="$TLS_PRIMARY_KEY"
-fi
-
-if [[ -z "$TLS_AUTH_KEYS" ]]; then
-  echo "TLS proxy auth keys are required. Set TLS_PROXY_API_KEY or TLS_PROXY_AUTH_KEYS." >&2
+if [[ -z "$TLS_SERVER_API_KEY" ]]; then
+  echo "TLS_SERVER_API_KEY is required for the TLS proxy." >&2
   exit 1
 fi
 
-IFS=',' read -r FIRST_TLS_KEY _ <<<"$TLS_AUTH_KEYS"
-FIRST_TLS_KEY="$(echo "$FIRST_TLS_KEY" | xargs)"
-if [[ -z "$TLS_PRIMARY_KEY" ]]; then
-  TLS_PRIMARY_KEY="$FIRST_TLS_KEY"
-fi
-
-export TLS_SERVER_URL="${TLS_SERVER_URL:-http://127.0.0.1:${TLS_PORT}}"
-export TLS_SERVER_API_KEY="${TLS_SERVER_API_KEY:-$TLS_PRIMARY_KEY}"
+export TLS_SERVER_URL="http://127.0.0.1:${TLS_PORT}"
 
 start_tls_proxy() {
   (
-    cd /app/tls-client
-    AUTH_KEYS="$TLS_AUTH_KEYS" PORT="$TLS_PORT" HEALTH_PORT="$TLS_HEALTH_PORT" bash /app/tls-client/entrypoint.sh
+    cd /app
+    AUTH_KEYS="$TLS_SERVER_API_KEY" PORT="$TLS_PORT" HEALTH_PORT="$TLS_HEALTH_PORT" bash /app/tls-client-entrypoint.sh
   )
 }
 

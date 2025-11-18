@@ -84,6 +84,7 @@ server/data/*
 !server/data/books/
 server/data/books/*
 !server/data/books/.gitkeep
+ios-app/KindleAudioApp/Config.xcconfig
 
 # Build artifacts
 build/

@@ -172,8 +172,8 @@ struct APIClient {
         let renderingToken: String
         let rendererRevision: String
         let guid: String
-        let tlsServerUrl: String
-        let tlsApiKey: String
+        let tlsServerUrl: String?
+        let tlsApiKey: String?
     }
 
     struct SessionResponse: Decodable {

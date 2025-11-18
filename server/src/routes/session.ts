@@ -32,11 +32,10 @@ export async function registerSessionRoutes(
     async (request, reply) => {
       const body = request.body ?? {};
       const cookies = resolveCookies(body);
-      const deviceToken = body.deviceToken ?? env.defaultDeviceToken;
-      const renderingToken = body.renderingToken ?? env.defaultRenderingToken;
-      const rendererRevision =
-        body.rendererRevision ?? env.defaultRendererRevision;
-      const guid = body.guid ?? env.defaultGuid;
+      const deviceToken = body.deviceToken;
+      const renderingToken = body.renderingToken;
+      const rendererRevision = body.rendererRevision;
+      const guid = body.guid;
       const tlsServerUrl = body.tlsServerUrl ?? env.tlsServerUrl;
       const tlsApiKey = body.tlsApiKey ?? env.tlsServerApiKey;
 
@@ -121,10 +120,6 @@ function resolveCookies(
       sessionId,
       xMain,
     };
-  }
-
-  if (env.defaultCookieString && env.defaultCookieString.length > 0) {
-    return env.defaultCookieString;
   }
 
   return undefined;

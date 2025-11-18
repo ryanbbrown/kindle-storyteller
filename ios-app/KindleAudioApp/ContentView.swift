@@ -588,11 +588,33 @@ struct ContentView: View {
     }
 
     private func makeClient() throws -> APIClient {
-        // For device testing switch to: http://192.168.1.30:3000
-        guard let baseURL = URL(string: "http://localhost:3000") else {
+        guard let baseURL = try resolveBaseURL() else {
             throw ValidationError.invalidBaseURL
         }
         return APIClient(baseURL: baseURL)
+    }
+
+    private func resolveBaseURL() throws -> URL? {
+        if
+            let envValue = ProcessInfo.processInfo.environment["API_BASE_URL"],
+            let url = URL(string: envValue.trimmingCharacters(in: .whitespacesAndNewlines)),
+            !envValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        {
+            return url
+        }
+
+        guard
+            let rawValue = Bundle.main.object(forInfoDictionaryKey: "API_BASE_HOST") as? String
+        else {
+            return nil
+        }
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return nil
+        }
+
+        let prefix = trimmed.contains("localhost") ? "http://" : "https://"
+        return URL(string: prefix + trimmed)
     }
 
     @MainActor
@@ -643,8 +665,8 @@ private func ensureSession(client: APIClient) async throws -> String {
             renderingToken: renderingToken,
             rendererRevision: rendererRevision,
             guid: guid,
-            tlsServerUrl: "http://localhost:8080",
-            tlsApiKey: "my-auth-key-1"
+            tlsServerUrl: nil,
+            tlsApiKey: nil
         )
     }
 

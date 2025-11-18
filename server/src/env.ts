@@ -12,11 +12,6 @@ export const env = {
   host: process.env.HOST ?? "0.0.0.0",
   tlsServerUrl: process.env.TLS_SERVER_URL ?? "http://localhost:8080",
   tlsServerApiKey: process.env.TLS_SERVER_API_KEY ?? "",
-  defaultCookieString: process.env.COOKIES,
-  defaultDeviceToken: process.env.DEVICE_TOKEN,
-  defaultRenderingToken: process.env.RENDERING_TOKEN,
-  defaultRendererRevision: process.env.RENDERER_REVISION,
-  defaultGuid: process.env.GUID,
   sessionTtlMs: Number.parseInt(
     process.env.SESSION_TTL_MS ?? String(4 * hourInMs),
     10
