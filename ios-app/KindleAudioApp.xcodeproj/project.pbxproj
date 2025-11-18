@@ -187,9 +187,9 @@
 				DEVELOPMENT_TEAM = 49R5246R3Q;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = KindleAudioApp/Info.plist;
+				INFOPLIST_KEY_API_BASE_HOST = "$(API_BASE_HOST)";
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
-				INFOPLIST_KEY_API_BASE_HOST = "$(API_BASE_HOST)";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIBackgroundModes = audio;
@@ -225,9 +225,9 @@
 				DEVELOPMENT_TEAM = 49R5246R3Q;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = KindleAudioApp/Info.plist;
+				INFOPLIST_KEY_API_BASE_HOST = "$(API_BASE_HOST)";
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
-				INFOPLIST_KEY_API_BASE_HOST = "$(API_BASE_HOST)";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIBackgroundModes = audio;

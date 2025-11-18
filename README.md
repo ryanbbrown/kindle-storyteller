@@ -1,5 +1,7 @@
 # Kindle AI Audiobook
 
+README UNDER CONSTRUCTION
+
 ## Components
 - `ios-app`: SwiftUI client that captures Kindle session info and drives the pipeline.
 - `server`: Fastify backend orchestrating Kindle fetches and the OCR/glyph workflow.
@@ -56,3 +58,34 @@ The repository now includes a multi-stage `Dockerfile`, combined process supervi
    Update the client’s base URL (or session creation form) to the deployed Fly hostname. The backend automatically routes traffic through the co-located TLS proxy.
 
 You can customize CPU/memory with `fly scale vm` if Tesseract workload requires extra resources. The included Fly HTTP service exposes port `3000`; make sure any additional ports go through `start.sh` or another supervisor if you later split workloads.
+
+## iOS App Installation
+
+### Add Apple ID to Xcode
+- Open Xcode
+- Click "Xcode" -> "Settings"
+- Click "Apple Accounts"
+- Add your apple account
+- Click on the account, then "Personal Team", then "Manage Certificates..."
+- If a certificate doesn't exist, click the "+" in the bottom left, then "Apple Development" to create a new certificate
+
+### Configure project
+- Open the KindleAudioApp project in Xcode
+- In the navigation bar on the left, select the top-level "KindleAudioApp"
+- Go to the "Signing & Capabilities" tab
+- Under "Team", select your “Personal Team” (your Apple ID) that you added.
+- Ensure “Automatically manage signing” is enabled.
+- Set "Bundle Identifier" to something unique; I used com.example.KindleAudioApp (probably should change lol)
+- Near the top left, click "+ Capability", then click on the "Background Modes" capability to add it
+- Expand it and check the "Audio, AirPlay, and Picture in Picture" box
+
+### Connect iPhone
+- Plug your iPhone into your Mac
+- Click "Trust" if you haven't already
+- In center top bar of Xcode, click on the device selector and select your iPhone
+- Click the Run (▶) button
+- You'll receive a pop-up that says "Developer Mode disabled"; go to Settings -> Privacy & Security, scroll all the way down, click on "Developer Mode", then enable it, restart your phone, and accept any prompts
+- Click the Run button again if needed
+
+
+
