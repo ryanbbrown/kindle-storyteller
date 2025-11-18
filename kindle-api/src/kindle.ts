@@ -5,6 +5,7 @@ import {
   HttpClient,
   TlsClientConfig,
 } from "./http-client.js";
+import type { TLSClientRequestPayload } from "./tls-client-api.js";
 import { Filter, Query } from "./query-filter.js";
 
 export type {
@@ -203,7 +204,10 @@ export class Kindle {
    * @param payload - Optional TLS client payload (e.g., for custom headers)
    * @returns The response from the TLS client
    */
-  async request(url: string, payload?: { headers?: Record<string, string> }) {
+  async request(
+    url: string,
+    payload?: Partial<TLSClientRequestPayload>
+  ) {
     return await this.#client.request(url, payload);
   }
 

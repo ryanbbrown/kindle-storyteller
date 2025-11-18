@@ -13,6 +13,7 @@ type BooksResponse = {
   refreshed: boolean;
 };
 
+/** Registers book listing and diagnostics routes. */
 export async function registerBooksRoutes(
   app: FastifyInstance,
   store: SessionStore
@@ -39,6 +40,7 @@ export async function registerBooksRoutes(
       });
     }
   );
+
 }
 
 function isTruthy(value: string | boolean | undefined): boolean {

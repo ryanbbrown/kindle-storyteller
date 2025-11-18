@@ -2,8 +2,8 @@
  * - runChunkPipeline: exported entry that calls determineSteps, ensureChunkDownloaded, runChunkOcr, and generateChunkPreviewAudio.
  * - determineSteps: plans required stages by leveraging findExistingChunk, resolveArtifacts, and statMatches checks.
  *   - findExistingChunk: scans stored chunk metadata via readChunkMetadata and selectMatchingRange to find coverage ranges.
- *   - selectMatchingRange: matches requested offsets/positionIds to metadata ranges for determineSteps.
- * - resolveChunkByteRange: translates coverage metadata into byte offsets for runChunkPipeline results.
+ *   - selectMatchingRange: matches requested Kindle positionIds to metadata ranges for determineSteps.
+ * - resolveChunkPositionRange: exposes coverage metadata so clients know which positionIds a chunk spans.
  * - statMatches: shared helper letting determineSteps probe cached artifacts without duplicating fs try/catch logic.
  */
 import fs from "node:fs/promises";
@@ -24,6 +24,7 @@ import {
 } from "./elevenlabs-audio.js";
 import { env } from "../env.js";
 import { readChunkMetadata } from "./chunk-metadata-service.js";
+import { openBenchmarkPayload } from "../lib/benchmarks.js";
 import type {
   CoverageRange,
   RendererCoverageMetadata,
@@ -35,19 +36,20 @@ export type RunChunkPipelineOptions = {
   asin: string;
   kindle: Kindle;
   renderingToken: string;
+  rendererRevision: string;
   startingPosition: number | string;
 };
 
-export type ChunkPipelineByteRange = {
-  startOffset: number;
-  endOffset: number;
+export type ChunkPipelinePositionRange = {
+  startPositionId: number;
+  endPositionId: number;
 };
 
 export type ChunkPipelineState = {
   asin: string;
   chunkId: string;
   steps: PipelineStep[];
-  byteRange: ChunkPipelineByteRange;
+  positionRange: ChunkPipelinePositionRange;
   artifactsDir: string;
   audioDurationSeconds?: number;
 };
@@ -72,6 +74,7 @@ export async function runChunkPipeline(
       asin: options.asin,
       kindle: options.kindle,
       renderingToken: options.renderingToken,
+      rendererRevision: options.rendererRevision,
       renderOptions: {
         startingPosition: options.startingPosition,
         numPages: DEFAULT_RENDER_NUM_PAGES,
@@ -126,6 +129,7 @@ export async function runChunkPipeline(
   }
 
   let audioResult: ChunkAudioSummary | undefined;
+  let audioDurationSeconds: number | undefined;
   const shouldRunAudio = plan.needsAudio || shouldRunOcr;
   if (shouldRunAudio && targetRange) {
     executedSteps.push("audio");
@@ -148,9 +152,22 @@ export async function runChunkPipeline(
     activeChunk.artifacts.audioAlignmentPath = audioResult.alignmentPath;
     activeChunk.artifacts.audioBenchmarksPath =
       audioResult.benchmarksPath;
+    audioDurationSeconds = audioResult.totalDurationSeconds;
   }
 
-  const byteRange = resolveChunkByteRange(
+  if (audioDurationSeconds === undefined) {
+    try {
+      const benchmarks = await openBenchmarkPayload(
+        activeChunk.asin,
+        activeChunk.chunkId,
+      );
+      audioDurationSeconds = benchmarks.totalDurationSeconds;
+    } catch {
+      // Leave audioDurationSeconds undefined if benchmarks cannot be loaded.
+    }
+  }
+
+  const positionRange = resolveChunkPositionRange(
     activeChunk.metadata,
     activeChunk.chunkId,
   );
@@ -159,17 +176,19 @@ export async function runChunkPipeline(
     asin: activeChunk.asin,
     chunkId: activeChunk.chunkId,
     steps: executedSteps,
-    byteRange,
+    positionRange,
     artifactsDir: activeChunk.artifacts.extractDir,
-    ...(audioResult ? { audioDurationSeconds: audioResult.totalDurationSeconds } : {}),
+    ...(audioDurationSeconds !== undefined
+      ? { audioDurationSeconds }
+      : {}),
   };
 }
 
-/** Picks the byte offsets for the current chunk to avoid shipping full metadata. */
-function resolveChunkByteRange(
+/** Picks the Kindle position range for the current chunk to avoid shipping full metadata. */
+function resolveChunkPositionRange(
   metadata: RendererCoverageMetadata,
   chunkId: string,
-): ChunkPipelineByteRange {
+): ChunkPipelinePositionRange {
   const candidates = metadata.ranges;
   const target = candidates.find((range) => range.id === chunkId);
   const chosen = target ?? candidates[0];
@@ -177,8 +196,8 @@ function resolveChunkByteRange(
     throw new Error(`Chunk ${chunkId} is missing coverage metadata`);
   }
   return {
-    startOffset: chosen.start.offset,
-    endOffset: chosen.end.offset,
+    startPositionId: chosen.start.positionId,
+    endPositionId: chosen.end.positionId,
   };
 }
 
@@ -212,16 +231,14 @@ async function determineSteps(options: {
   startingPosition: number | string;
 }): Promise<StepPlan> {
   const rawStart = String(options.startingPosition ?? "").trim();
-  const startOffset = Number.parseInt(rawStart, 10);
-  if (!Number.isFinite(startOffset)) {
+  const requestPositionId = Number.parseInt(rawStart, 10);
+  if (!Number.isFinite(requestPositionId)) {
     throw new Error("Invalid starting position");
   }
-  const positionId = Math.trunc(startOffset);
 
   const existing = await findExistingChunk({
     asin: options.asin,
-    startOffset,
-    requestPositionId: positionId,
+    requestPositionId: Math.trunc(requestPositionId),
   });
   if (!existing) {
     return { needsDownload: true, needsOcr: true, needsAudio: true };
@@ -266,8 +283,7 @@ async function determineSteps(options: {
 /** Finds a chunk in data/books/[asin] covering the requested start offset, if it exists. */
 async function findExistingChunk(options: {
   asin: string;
-  startOffset: number;
-  requestPositionId?: number;
+  requestPositionId: number;
 }): Promise<ExistingChunk | undefined> {
   const asinDir = path.join(env.storageDir, options.asin);
   const chunksRoot = path.join(asinDir, "chunks");
@@ -292,7 +308,6 @@ async function findExistingChunk(options: {
 
     const range = selectMatchingRange({
       metadata,
-      startOffset: options.startOffset,
       requestPositionId: options.requestPositionId,
     });
     if (!range) {
@@ -314,30 +329,15 @@ async function findExistingChunk(options: {
 /** Locates the coverage range matching the requested Kindle position metadata. */
 function selectMatchingRange(options: {
   metadata: RendererCoverageMetadata;
-  startOffset: number;
-  requestPositionId?: number;
+  requestPositionId: number;
 }): CoverageRange | undefined {
-  const { metadata, startOffset, requestPositionId } = options;
+  const { metadata, requestPositionId } = options;
   for (const range of metadata.ranges) {
     if (
-      requestPositionId !== undefined &&
-      range.start.positionId !== undefined &&
-      range.start.positionId === requestPositionId
+      range.start.positionId === requestPositionId ||
+      (requestPositionId >= range.start.positionId &&
+        requestPositionId <= range.end.positionId)
     ) {
-      return range;
-    }
-
-    if (
-      requestPositionId !== undefined &&
-      range.start.positionId !== undefined &&
-      range.end.positionId !== undefined &&
-      requestPositionId >= range.start.positionId &&
-      requestPositionId <= range.end.positionId
-    ) {
-      return range;
-    }
-
-    if (range.start.offset === startOffset) {
       return range;
     }
   }

@@ -10,6 +10,7 @@ type SessionRequestBody = {
   cookies?: Partial<Record<string, string>>;
   deviceToken?: string;
   renderingToken?: string;
+  rendererRevision?: string;
   guid?: string;
   tlsServerUrl?: string;
   tlsApiKey?: string;
@@ -21,6 +22,7 @@ type SessionResponse = {
   books: ReturnType<typeof serializeBooks>;
 };
 
+/** Registers the session routes for Kindle sessions. */
 export async function registerSessionRoutes(
   app: FastifyInstance,
   store: SessionStore
@@ -32,6 +34,8 @@ export async function registerSessionRoutes(
       const cookies = resolveCookies(body);
       const deviceToken = body.deviceToken ?? env.defaultDeviceToken;
       const renderingToken = body.renderingToken ?? env.defaultRenderingToken;
+      const rendererRevision =
+        body.rendererRevision ?? env.defaultRendererRevision;
       const guid = body.guid ?? env.defaultGuid;
       const tlsServerUrl = body.tlsServerUrl ?? env.tlsServerUrl;
       const tlsApiKey = body.tlsApiKey ?? env.tlsServerApiKey;
@@ -51,6 +55,11 @@ export async function registerSessionRoutes(
           .status(400)
           .send({ message: "renderingToken is required" } as never);
       }
+      if (!rendererRevision) {
+        return reply
+          .status(400)
+          .send({ message: "rendererRevision is required" } as never);
+      }
       if (!guid) {
         return reply.status(400).send({ message: "guid is required" } as never);
       }
@@ -63,10 +72,12 @@ export async function registerSessionRoutes(
           },
           "Creating Kindle session"
         );
+        request.log.info({ guid }, "Received session GUID");
         const session = await store.createSession({
           cookies,
           deviceToken,
           renderingToken,
+          rendererRevision,
           guid,
           tlsServer: {
             url: tlsServerUrl,
@@ -89,6 +100,7 @@ export async function registerSessionRoutes(
   );
 }
 
+/** Resolves Kindle cookies from the session request body or defaults. */
 function resolveCookies(
   body: SessionRequestBody
 ): string | KindleRequiredCookies | undefined {

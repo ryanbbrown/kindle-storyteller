@@ -11,6 +11,10 @@ final class AudioPlaybackController: ObservableObject {
     private var nowPlayingTitle: String?
     private let commandCenter = MPRemoteCommandCenter.shared()
 
+    var currentTime: TimeInterval {
+        player?.currentTime ?? 0
+    }
+
     func load(url: URL, title: String = "Kindle Audio Preview") {
         reset()
         do {

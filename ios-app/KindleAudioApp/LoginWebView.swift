@@ -7,12 +7,15 @@ struct LoginWebView: UIViewRepresentable {
     let onCookiesCaptured: ([HTTPCookie]) -> Void
     let onRenderingTokenCaptured: (String, String?) -> Void
     let onDeviceTokenCaptured: (String) -> Void
+    let onRendererRevisionCaptured: (String) -> Void
     let onStartingPositionCaptured: (String) -> Void
     let onGUIDCaptured: (String) -> Void
     let onASINCaptured: (String) -> Void
     let onDismissRequested: () -> Void
 
     func makeUIView(context: Context) -> WKWebView {
+        // clearWebsiteData()
+
         let contentController = WKUserContentController()
         contentController.add(context.coordinator, name: Coordinator.messageHandlerName)
 
@@ -57,6 +60,12 @@ struct LoginWebView: UIViewRepresentable {
             onCookiesCaptured(amazonCookies)
         }
     }
+
+    // private func clearWebsiteData() {
+    //     let store = WKWebsiteDataStore.default()
+    //     let types = WKWebsiteDataStore.allWebsiteDataTypes()
+    //     store.removeData(ofTypes: types, modifiedSince: Date(timeIntervalSince1970: 0)) {}
+    // }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         private let parent: LoginWebView
@@ -122,6 +131,10 @@ struct LoginWebView: UIViewRepresentable {
                 if let token = payload["value"] as? String, !token.isEmpty {
                     let sourceURL = payload["url"] as? String
                     parent.onRenderingTokenCaptured(token, sourceURL)
+                }
+            case "rendererRevision":
+                if let revision = payload["value"] as? String, !revision.isEmpty {
+                    parent.onRendererRevisionCaptured(revision)
                 }
             case "deviceToken":
                 if let token = payload["value"] as? String, !token.isEmpty {

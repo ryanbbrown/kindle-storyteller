@@ -38,6 +38,16 @@ struct APIClient {
         )
     }
 
+    func fetchBenchmarks(sessionId: String, asin: String, chunkId: String) async throws -> BenchmarkResponse {
+        let encodedASIN = asin.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? asin
+        let encodedChunk = chunkId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? chunkId
+        return try await send(
+            path: "books/\(encodedASIN)/chunks/\(encodedChunk)/benchmarks",
+            method: "GET",
+            headers: ["Authorization": "Bearer \(sessionId)"]
+        )
+    }
+
     func downloadChunkAudio(sessionId: String, asin: String, chunkId: String) async throws -> URL {
         let encodedASIN = asin.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? asin
         let encodedChunk = chunkId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? chunkId
@@ -90,6 +100,17 @@ struct APIClient {
             path: path,
             method: "GET",
             headers: ["Authorization": "Bearer \(sessionId)"]
+        )
+    }
+
+    func updateProgress(sessionId: String, asin: String, position: Int) async throws -> UpdateProgressResponse {
+        let encodedASIN = asin.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? asin
+        let body = try JSONEncoder().encode(UpdateProgressRequest(position: position))
+        return try await send(
+            path: "books/\(encodedASIN)/progress",
+            method: "POST",
+            headers: ["Authorization": "Bearer \(sessionId)", "Content-Type": "application/json"],
+            body: body
         )
     }
 
@@ -149,6 +170,7 @@ struct APIClient {
         let cookieString: String
         let deviceToken: String
         let renderingToken: String
+        let rendererRevision: String
         let guid: String
         let tlsServerUrl: String
         let tlsApiKey: String
@@ -183,20 +205,46 @@ struct APIClient {
         let asin: String
         let chunkId: String
         let steps: [PipelineStep]
-        let byteRange: ByteRange
+        let positionRange: PositionRange
         let artifactsDir: String
         let audioDurationSeconds: Double?
     }
 
-    struct ByteRange: Decodable, Equatable {
-        let startOffset: Int
-        let endOffset: Int
+    struct PositionRange: Decodable, Equatable {
+        let startPositionId: Int
+        let endPositionId: Int
     }
 
     enum PipelineStep: String, Codable, Equatable {
         case download
         case ocr
         case audio
+    }
+
+    struct BenchmarkResponse: Decodable, Equatable {
+        let totalDurationSeconds: Double
+        let benchmarkIntervalSeconds: Double
+        let benchmarks: [Benchmark]
+
+        struct Benchmark: Decodable, Equatable {
+            let timeSeconds: Double
+            let kindlePositionIdStart: Int
+            let kindlePositionIdEnd: Int
+        }
+    }
+
+    struct UpdateProgressRequest: Encodable {
+        let position: Int
+    }
+
+    struct UpdateProgressResponse: Decodable, Equatable {
+        let success: Bool
+        let upstreamStatus: Int
+
+        private enum CodingKeys: String, CodingKey {
+            case success
+            case upstreamStatus
+        }
     }
 
     struct EmptyResponse: Decodable {

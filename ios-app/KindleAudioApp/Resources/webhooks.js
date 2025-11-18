@@ -165,6 +165,24 @@
         return null;
     }
 
+    function normalizeGUIDValue(raw) {
+        if (!raw || typeof raw !== 'string') {
+            return null;
+        }
+        var trimmed = raw.trim();
+        if (!trimmed) {
+            return null;
+        }
+        var segments = trimmed.split(',');
+        // TODO: find root cause of multiple GUID values rather than post-processing here
+        var candidate = segments[segments.length - 1].trim();
+        var match = candidate.match(/CR![A-Z0-9]+/);
+        if (match && match[0]) {
+            return match[0];
+        }
+        return candidate || null;
+    }
+
     function extractGUIDFromURL(url) {
         if (!url || typeof url !== 'string') {
             return null;
@@ -173,18 +191,19 @@
             var parsed = new URL(url, window.location.origin);
             var value = parsed.searchParams.get('guid');
             if (value) {
-                return value;
+                return normalizeGUIDValue(value);
             }
         } catch (error) {
             // fallback regex
         }
         var match = url.match(/[?&]guid=([^&#]+)/i);
         if (match && match[1]) {
+            var decoded = match[1];
             try {
-                return decodeURIComponent(match[1]);
+                decoded = decodeURIComponent(match[1]);
             } catch (error) {
-                return match[1];
             }
+            return normalizeGUIDValue(decoded);
         }
         return null;
     }
@@ -222,11 +241,37 @@
         return null;
     }
 
+    function extractRevisionFromURL(url) {
+        if (!url || typeof url !== 'string') {
+            return null;
+        }
+        try {
+            var parsed = new URL(url, window.location.origin);
+            var revision = parsed.searchParams.get('revision');
+            if (revision) {
+                return revision;
+            }
+        } catch (error) {
+            // ignore parsing failures
+        }
+        var match = url.match(/[?&]revision=([^&#]+)/i);
+        if (match && match[1]) {
+            try {
+                return decodeURIComponent(match[1]);
+            } catch (error) {
+                return match[1];
+            }
+        }
+        return null;
+    }
+
     function handleRendererURL(url) {
         var position = extractStartingPositionFromURL(url);
         postMessage('startingPosition', position);
         var asin = extractASINFromURL(url);
         postMessage('asin', asin);
+        var revision = extractRevisionFromURL(url);
+        postMessage('rendererRevision', revision);
         postMessage('debugRendererURL', url);
     }
 

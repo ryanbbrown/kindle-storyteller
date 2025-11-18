@@ -18,6 +18,7 @@ type PipelineBody = {
 
 type PipelineResponse = ChunkPipelineState;
 
+/** Registers pipeline routes for running the audiobook pipeline. */
 export async function registerPipelineRoutes(
   app: FastifyInstance,
   store: SessionStore
@@ -50,6 +51,7 @@ export async function registerPipelineRoutes(
       asin,
       kindle: session.kindle,
       renderingToken: session.renderingToken,
+      rendererRevision: session.rendererRevision,
       startingPosition,
     };
 

@@ -15,6 +15,7 @@ export const env = {
   defaultCookieString: process.env.COOKIES,
   defaultDeviceToken: process.env.DEVICE_TOKEN,
   defaultRenderingToken: process.env.RENDERING_TOKEN,
+  defaultRendererRevision: process.env.RENDERER_REVISION,
   defaultGuid: process.env.GUID,
   sessionTtlMs: Number.parseInt(
     process.env.SESSION_TTL_MS ?? String(4 * hourInMs),

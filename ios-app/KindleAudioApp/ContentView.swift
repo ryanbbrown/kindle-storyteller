@@ -2,7 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @ObservedObject var sessionStore: SessionStore
-    @StateObject private var audioController = AudioPlaybackController()
+    @StateObject private var playbackCoordinator = PlaybackCoordinator()
     @State private var isPresentingLogin = false
 
     @State private var webViewReloadCounter = 0
@@ -19,6 +19,7 @@ struct ContentView: View {
     @State private var useManualStartingPosition: Bool = false
     @State private var activeAlert: AppAlert?
     @State private var downloadedAudioURL: URL?
+    @State private var benchmarkTimeline: BenchmarkTimeline?
     @State private var isDownloadingAudio = false
     @State private var audioErrorMessage: String?
 
@@ -56,6 +57,10 @@ struct ContentView: View {
                     onDeviceTokenCaptured: { token in
                         sessionStore.updateDeviceToken(token)
                         Task { @MainActor in invalidateSession(reason: "device token refreshed") }
+                    },
+                    onRendererRevisionCaptured: { revision in
+                        sessionStore.updateRendererRevision(revision)
+                        Task { @MainActor in invalidateSession(reason: "renderer revision refreshed") }
                     },
                     onStartingPositionCaptured: { position in
                         sessionStore.updateStartingPosition(position)
@@ -192,6 +197,7 @@ struct ContentView: View {
                     .buttonStyle(.bordered)
                     .disabled(isPerformingRequest)
                 }
+
             }
         }
     }
@@ -231,7 +237,7 @@ struct ContentView: View {
                     Text("Chunk ID: \(pipeline.chunkId)")
                         .font(.caption)
 
-                    Text("Positions: \(pipeline.byteRange.startOffset) → \(pipeline.byteRange.endOffset)")
+                    Text("Positions: \(pipeline.positionRange.startPositionId) → \(pipeline.positionRange.endPositionId)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
 
@@ -267,10 +273,22 @@ struct ContentView: View {
                             .foregroundStyle(.secondary)
                     }
 
-                    if let message = audioErrorMessage ?? audioController.errorMessage {
+                    if let timeline = benchmarkTimeline {
+                        Text("Loaded \(timeline.checkpoints.count) checkpoints")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if let message = audioErrorMessage ?? playbackCoordinator.audioController.errorMessage {
                         Text(message)
                             .font(.caption2)
                             .foregroundColor(.red)
+                    }
+
+                    if let progressMessage = playbackCoordinator.progressErrorMessage {
+                        Text(progressMessage)
+                            .font(.caption2)
+                            .foregroundColor(.orange)
                     }
 
                     HStack(spacing: 12) {
@@ -280,15 +298,15 @@ struct ContentView: View {
                         .buttonStyle(.borderedProminent)
                         .disabled(isDownloadingAudio)
 
-                        Button(audioController.isPlaying ? "Pause" : "Play") {
-                            if audioController.isPlaying {
-                                audioController.pause()
+                        Button(playbackCoordinator.audioController.isPlaying ? "Pause" : "Play") {
+                            if playbackCoordinator.audioController.isPlaying {
+                                playbackCoordinator.pause()
                             } else {
-                                audioController.play()
+                                playbackCoordinator.play()
                             }
                         }
                         .buttonStyle(.bordered)
-                        .disabled(!audioController.isReady)
+                        .disabled(!playbackCoordinator.audioController.isReady)
                     }
                 }
             } else {
@@ -324,6 +342,9 @@ struct ContentView: View {
             return false
         }
         guard let renderingToken = sessionStore.renderingToken?.trimmedNonEmpty() else {
+            return false
+        }
+        guard sessionStore.rendererRevision?.trimmedNonEmpty() != nil else {
             return false
         }
         guard let guid = sessionStore.guid?.trimmedNonEmpty() else {
@@ -383,6 +404,14 @@ struct ContentView: View {
                 message: loginRefreshMessage(reason: "Rendering token is missing.")
             )
             log("Missing rendering token; prompted user to log in again.")
+            return false
+        }
+        guard sessionStore.rendererRevision?.trimmedNonEmpty() != nil else {
+            presentAlert(
+                title: "Sign In Required",
+                message: loginRefreshMessage(reason: "Renderer revision is missing.")
+            )
+            log("Missing renderer revision; prompted user to log in again.")
             return false
         }
         guard sessionStore.guid?.trimmedNonEmpty() != nil else {
@@ -522,10 +551,27 @@ struct ContentView: View {
                 chunkId: pipeline.chunkId
             )
 
+            let benchmarks = try await client.fetchBenchmarks(
+                sessionId: sessionId,
+                asin: pipeline.asin,
+                chunkId: pipeline.chunkId
+            )
+
+            let timeline = BenchmarkTimeline(response: benchmarks)
+
             downloadedAudioURL = fileURL
+            benchmarkTimeline = timeline
             let title = books.first(where: { $0.asin == pipeline.asin })?.title ?? "Kindle Audio Preview"
-            audioController.load(url: fileURL, title: title)
+            playbackCoordinator.configure(
+                audioURL: fileURL,
+                title: title,
+                timeline: timeline,
+                client: client,
+                sessionId: sessionId,
+                asin: pipeline.asin
+            )
             log("Audio preview saved to \(fileURL.lastPathComponent).")
+            log("Loaded \(timeline.checkpoints.count) benchmark checkpoints.")
         } catch {
             audioErrorMessage = error.localizedDescription
             logError(error)
@@ -534,14 +580,16 @@ struct ContentView: View {
 
     @MainActor
     private func resetAudioPlaybackState() {
-        audioController.reset()
+        playbackCoordinator.stop()
         downloadedAudioURL = nil
+        benchmarkTimeline = nil
         audioErrorMessage = nil
         isDownloadingAudio = false
     }
 
     private func makeClient() throws -> APIClient {
-        guard let baseURL = URL(string: "http://192.168.1.30:3000") else {
+        // For device testing switch to: http://192.168.1.30:3000
+        guard let baseURL = URL(string: "http://localhost:3000") else {
             throw ValidationError.invalidBaseURL
         }
         return APIClient(baseURL: baseURL)
@@ -582,6 +630,9 @@ private func ensureSession(client: APIClient) async throws -> String {
         guard let renderingToken = sessionStore.renderingToken?.trimmedNonEmpty() else {
             throw ValidationError.missing("rendering token")
         }
+        guard let rendererRevision = sessionStore.rendererRevision?.trimmedNonEmpty() else {
+            throw ValidationError.missing("renderer revision")
+        }
         guard let guid = sessionStore.guid?.trimmedNonEmpty() else {
             throw ValidationError.missing("GUID")
         }
@@ -590,6 +641,7 @@ private func ensureSession(client: APIClient) async throws -> String {
             cookieString: cookieString,
             deviceToken: deviceToken,
             renderingToken: renderingToken,
+            rendererRevision: rendererRevision,
             guid: guid,
             tlsServerUrl: "http://localhost:8080",
             tlsApiKey: "my-auth-key-1"

@@ -23,13 +23,14 @@ export class HttpClient {
 
   private async _request(
     url: string,
-    payload?: TLSClientRequestPayload
+    payload?: Partial<TLSClientRequestPayload>
   ): Promise<Response> {
+    const { headers: customHeaders, ...restPayload } = payload ?? {};
     const headers: Record<string, string> = {
       Cookie: this.serializeCookies(),
       "Accept-Language": "en-US,en;q=0.9,ko-KR;q=0.8,ko;q=0.7",
       "User-Agent": USER_AGENT,
-      ...payload?.headers,
+      ...customHeaders,
     };
 
     if (this.sessionId) {
@@ -40,17 +41,16 @@ export class HttpClient {
       headers["x-adp-session-token"] = this.adpSessionId;
     }
 
-    const body = JSON.stringify(
-      {
-        tlsClientIdentifier: "chrome_112",
-        requestUrl: url,
-        requestMethod: "GET",
-        withDebug: true,
-        headers,
-      } satisfies TLSClientRequestPayload,
-      null,
-      2
-    );
+    const requestPayload: TLSClientRequestPayload = {
+      tlsClientIdentifier: "chrome_112",
+      requestUrl: url,
+      requestMethod: "GET",
+      withDebug: true,
+      headers,
+      ...restPayload,
+    };
+
+    const body = JSON.stringify(requestPayload, null, 2);
 
     return fetch(`${this.clientOptions.url}/api/forward`, {
       method: "POST",
@@ -65,7 +65,7 @@ export class HttpClient {
     url: string,
     payload?: Partial<TLSClientRequestPayload>
   ): Promise<TLSClientResponseData> {
-    const response = await this._request(url, payload as TLSClientRequestPayload);
+    const response = await this._request(url, payload);
 
     const json = await response.json();
 

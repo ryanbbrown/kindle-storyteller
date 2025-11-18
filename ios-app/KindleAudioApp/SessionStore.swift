@@ -4,6 +4,7 @@ final class SessionStore: ObservableObject {
     @Published private(set) var cookies: [HTTPCookie] = []
     @Published private(set) var renderingToken: String?
     @Published private(set) var renderingTokenSourceURL: String?
+    @Published private(set) var rendererRevision: String?
     @Published private(set) var deviceToken: String?
     @Published private(set) var startingPosition: String?
     @Published private(set) var guid: String?
@@ -31,6 +32,12 @@ final class SessionStore: ObservableObject {
             if let url = sourceURL, !url.isEmpty {
                 self.renderingTokenSourceURL = url
             }
+        }
+    }
+
+    func updateRendererRevision(_ revision: String) {
+        DispatchQueue.main.async {
+            self.rendererRevision = revision.trimmingCharacters(in: .whitespacesAndNewlines)
         }
     }
 

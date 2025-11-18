@@ -1,13 +1,9 @@
 export type IsoDateTime = string;
 
 export interface RangeBound {
-  raw: string;
-  offset: number;
-  normalized?: string;
-  positionId?: number;
+  positionId: number;
 }
 
-// TODO: collapse RangeBound to a single numeric field once Kindle position normalization is finalized.
 export interface RangePagesMetadata {
   count: number;
   indexStart?: number;

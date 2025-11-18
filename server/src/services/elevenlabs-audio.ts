@@ -4,9 +4,8 @@
  * - normalizeTextWithMap: preprocesses text and produces char maps consumed by generateChunkPreviewAudio and buildBenchmarks.
  * - computeSentenceSliceLength: selects the normalized text span used for TTS.
  * - buildBenchmarkTimeline: defines benchmark timestamps that collectSamples converts into alignment indices.
- * - collectSamples: maps alignment data to benchmark entries before buildBenchmarks composes Kindle offsets.
- * - buildBenchmarks: ties timestamps to Kindle offsets, leveraging convertOffsetToRaw and normalization maps.
- * - convertOffsetToRaw: converts numeric offsets into Kindle "major;minor" strings for metadata.
+ * - collectSamples: maps alignment data to benchmark entries before buildBenchmarks composes Kindle position ids.
+ * - buildBenchmarks: ties timestamps to Kindle position ids, leveraging normalization maps.
  * - getElevenLabsClient: lazily creates the ElevenLabs SDK client consumed by generateChunkPreviewAudio.
  */
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
@@ -30,10 +29,8 @@ export type BenchmarkEntry = {
   timeSeconds: number;
   charIndexStart: number;
   charIndexEnd: number;
-  kindleOffsetStart: number;
-  kindleOffsetEnd: number;
-  kindleRawStart: string;
-  kindleRawEnd: string;
+  kindlePositionIdStart: number;
+  kindlePositionIdEnd: number;
   textNormalized: string;
   textOriginal: string;
 };
@@ -125,16 +122,11 @@ export async function generateChunkPreviewAudio(
       activeAlignment.characterEndTimesSeconds.length - 1
     ];
 
-  // Map every normalized char back to its Kindle source offset.
-  const charToKindleOffset = charToOriginalIndex.map(
-    (originalIndex) => range.start.offset + originalIndex,
-  );
-
-  const processedRawLength =
-    charToOriginalIndex.length > 0
-      ? charToOriginalIndex[charToOriginalIndex.length - 1] + 1
-      : 0;
-  const processedKindleEndOffset = range.start.offset + processedRawLength;
+  const charToKindlePositionId = buildCharToPositionIdMap({
+    textLength: charToOriginalIndex.length,
+    startPositionId: range.start.positionId,
+    endPositionId: range.end.positionId,
+  });
 
   // Build benchmark records so the client can scrub audio deterministically.
   const benchmarkTimes = buildBenchmarkTimeline(
@@ -147,9 +139,8 @@ export async function generateChunkPreviewAudio(
     textForTts,
     rawText,
     charToOriginalIndex,
-    charToKindleOffset,
-    processedRawLength,
-    processedKindleEndOffset,
+    charToKindlePositionId,
+    endPositionId: range.end.positionId,
     totalDurationSeconds,
   });
 
@@ -168,10 +159,10 @@ export async function generateChunkPreviewAudio(
     voiceId: config.voiceId,
     modelId: config.modelId,
     outputFormat: config.outputFormat,
-    chunkStartOffset: range.start.offset,
+    chunkStartPositionId: range.start.positionId,
     textLength: textForTts.length,
     totalDurationSeconds,
-    charToKindleOffset,
+    charToKindlePositionId,
     alignment: alignment ?? normalizedAlignment,
   };
   await fs.writeFile(
@@ -295,6 +286,33 @@ function computeSentenceSliceLength(
   return cap;
 }
 
+// TODO: make this smarter (both incomplete audio and non-linear effects)
+function buildCharToPositionIdMap(options: {
+  textLength: number;
+  startPositionId: number;
+  endPositionId: number;
+}): number[] {
+  const { textLength, startPositionId, endPositionId } = options;
+  if (!Number.isFinite(startPositionId) || !Number.isFinite(endPositionId)) {
+    throw new Error("Chunk metadata is missing Kindle position ids");
+  }
+  if (textLength <= 0) {
+    return [];
+  }
+
+  const steps = Math.max(textLength - 1, 1);
+  const span = endPositionId - startPositionId;
+  const result = new Array<number>(textLength);
+
+  for (let index = 0; index < textLength; index += 1) {
+    const ratio = steps === 0 ? 0 : index / steps;
+    const value = Math.round(startPositionId + span * ratio);
+    result[index] = value;
+  }
+
+  return result;
+}
+
 /** Builds the timeline of timestamps at which benchmarks should be recorded. */
 function buildBenchmarkTimeline(
   totalDurationSeconds: number,
@@ -345,15 +363,14 @@ function collectSamples(
   return samples;
 }
 
-/** Generates benchmark entries tying timestamps back to Kindle offsets. */
+/** Generates benchmark entries tying timestamps back to Kindle position ids. */
 function buildBenchmarks(options: {
   samples: Array<{ timeSeconds: number; charIndex: number }>;
   textForTts: string;
   rawText: string;
   charToOriginalIndex: number[];
-  charToKindleOffset: number[];
-  processedRawLength: number;
-  processedKindleEndOffset: number;
+  charToKindlePositionId: number[];
+  endPositionId: number;
   totalDurationSeconds: number;
 }): BenchmarkEntry[] {
   const {
@@ -361,11 +378,15 @@ function buildBenchmarks(options: {
     textForTts,
     rawText,
     charToOriginalIndex,
-    charToKindleOffset,
-    processedRawLength,
-    processedKindleEndOffset,
+    charToKindlePositionId,
+    endPositionId,
     totalDurationSeconds,
   } = options;
+
+  const processedRawLength =
+    charToOriginalIndex.length > 0
+      ? charToOriginalIndex[charToOriginalIndex.length - 1] + 1
+      : 0;
 
   const benchmarks: BenchmarkEntry[] = [];
 
@@ -388,22 +409,20 @@ function buildBenchmarks(options: {
         ? charToOriginalIndex[endCharIndex]
         : processedRawLength;
 
-    // Kindle offsets mirror what the renderer expects for jump navigation.
-    const kindleOffsetStart =
-      charToKindleOffset[startCharIndex] ?? processedKindleEndOffset;
-    const kindleOffsetEnd =
-      endCharIndex < charToKindleOffset.length
-        ? charToKindleOffset[endCharIndex]
-        : processedKindleEndOffset;
+    // Kindle position ids mirror what the rest of the system expects for jump navigation.
+    const kindlePositionIdStart =
+      charToKindlePositionId[startCharIndex] ?? endPositionId;
+    const kindlePositionIdEnd =
+      endCharIndex < charToKindlePositionId.length
+        ? charToKindlePositionId[endCharIndex]
+        : endPositionId;
 
     benchmarks.push({
       timeSeconds: Number(current.timeSeconds.toFixed(3)),
       charIndexStart: startCharIndex,
       charIndexEnd: endCharIndex,
-      kindleOffsetStart,
-      kindleOffsetEnd,
-      kindleRawStart: convertOffsetToRaw(kindleOffsetStart),
-      kindleRawEnd: convertOffsetToRaw(kindleOffsetEnd),
+      kindlePositionIdStart,
+      kindlePositionIdEnd,
       textNormalized: textForTts.slice(startCharIndex, endCharIndex),
       textOriginal: rawText
         .slice(startOriginalIndex, endOriginalIndex)
@@ -413,14 +432,6 @@ function buildBenchmarks(options: {
   }
 
   return benchmarks;
-}
-
-/** Converts an absolute Kindle offset into the raw "major;minor" string. */
-function convertOffsetToRaw(offset: number): string {
-  const major = Math.floor(offset / 1000);
-  const minor = offset % 1000;
-  // Kindle raw offsets are e.g. "123;456".
-  return `${major};${minor}`;
 }
 
 /** Lazily creates and caches the ElevenLabs SDK client. */

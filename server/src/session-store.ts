@@ -11,6 +11,7 @@ export type SessionContext = {
   id: string;
   kindle: Kindle;
   renderingToken: string;
+  rendererRevision: string;
   guid: string;
   createdAt: number;
   lastAccessedAt: number;
@@ -21,6 +22,7 @@ export type CreateSessionInput = {
   cookies: string | KindleRequiredCookies;
   deviceToken: string;
   renderingToken: string;
+  rendererRevision: string;
   guid: string;
   tlsServer: KindleConfiguration["tlsServer"];
 };
@@ -30,6 +32,7 @@ export class SessionStore {
 
   constructor(private readonly ttlMs: number) {}
 
+  /** Creates a Kindle session context backed by the Kindle API client. */
   async createSession(input: CreateSessionInput): Promise<SessionContext> {
     const kindle = await Kindle.fromConfig({
       cookies: input.cookies,
@@ -43,6 +46,7 @@ export class SessionStore {
       id: sessionId,
       kindle,
       renderingToken: input.renderingToken,
+      rendererRevision: input.rendererRevision,
       guid: input.guid,
       createdAt: now,
       lastAccessedAt: now,
