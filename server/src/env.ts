@@ -3,7 +3,13 @@ import { fileURLToPath } from "node:url";
 
 import { config as loadEnv } from "dotenv";
 
+const currentDir = path.dirname(fileURLToPath(import.meta.url));
+
 loadEnv();
+loadEnv({
+  path: path.resolve(currentDir, "../../kindle-api/.env"),
+  override: false,
+});
 
 const hourInMs = 60 * 60 * 1000;
 
@@ -19,10 +25,7 @@ export const env = {
   logLevel: (process.env.LOG_LEVEL as "fatal" | "error" | "warn" | "info" | "debug" | "trace") ?? "info",
   storageDir:
     process.env.CONTENT_STORAGE_DIR ??
-    path.resolve(
-      path.dirname(fileURLToPath(import.meta.url)),
-      "../data/books"
-    ),
+    path.resolve(currentDir, "../data/books"),
 };
 
 export type Env = typeof env;

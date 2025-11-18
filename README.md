@@ -42,10 +42,9 @@ The repository now includes a multi-stage `Dockerfile`, combined process supervi
 2. **Configure secrets** – set the TLS proxy key (also used by the Fastify server) and, if you use ElevenLabs TTS, its API key:
    ```bash
    fly secrets set \
-     TLS_PROXY_API_KEY="replace-me" \
+     TLS_SERVER_API_KEY="replace-me" \
      ELEVENLABS_API_KEY="optional"
    ```
-   - Use `TLS_PROXY_AUTH_KEYS` instead of `TLS_PROXY_API_KEY` if you need multiple comma-separated TLS keys.  
    - All Kindle cookies/tokens now must come from the iOS client; there’s no longer a fallback to `.env`.
 
 3. **Deploy**
@@ -86,6 +85,5 @@ You can customize CPU/memory with `fly scale vm` if Tesseract workload requires 
 - Click the Run (▶) button
 - You'll receive a pop-up that says "Developer Mode disabled"; go to Settings -> Privacy & Security, scroll all the way down, click on "Developer Mode", then enable it, restart your phone, and accept any prompts
 - Click the Run button again if needed
-
 
 

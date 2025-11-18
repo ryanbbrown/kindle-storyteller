@@ -27,6 +27,15 @@ struct APIClient {
         )
     }
 
+    func fetchFullDetails(sessionId: String, asin: String) async throws -> BookDetailsResponse {
+        let encodedASIN = asin.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? asin
+        return try await send(
+            path: "books/\(encodedASIN)/full-details",
+            method: "GET",
+            headers: ["Authorization": "Bearer \(sessionId)"]
+        )
+    }
+
     func runPipeline(sessionId: String, asin: String, request: PipelineRequest) async throws -> PipelineResponse {
         let encodedASIN = asin.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? asin
         let body = try JSONEncoder().encode(request)
@@ -189,6 +198,13 @@ struct APIClient {
         let title: String
 
         var id: String { asin }
+    }
+
+    struct BookDetailsResponse: Decodable, Equatable {
+        let title: String
+        let coverImage: String
+        let currentPosition: Int
+        let length: Int
     }
 
     struct TextResponse: Decodable, Equatable {

@@ -20,6 +20,7 @@ final class PlaybackCoordinator: ObservableObject {
     func configure(
         audioURL: URL,
         title: String,
+        coverImageURL: String? = nil,
         timeline: BenchmarkTimeline,
         client: APIClient,
         sessionId: String,
@@ -39,7 +40,7 @@ final class PlaybackCoordinator: ObservableObject {
             self?.progressErrorMessage = message
         }
 
-        audioController.load(url: audioURL, title: title)
+        audioController.load(url: audioURL, title: title, coverImageURL: coverImageURL)
     }
 
     func play() {

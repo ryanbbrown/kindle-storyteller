@@ -8,13 +8,9 @@ struct ContentView: View {
     @State private var webViewReloadCounter = 0
 
     @State private var sessionId: String?
-    @State private var books: [APIClient.Book] = []
     @State private var latestPipeline: APIClient.PipelineResponse?
-    @State private var latestTextChunk: APIClient.TextResponse?
     @State private var statusLog: [String] = []
     @State private var isPerformingRequest = false
-    @State private var textStart: Int = 0
-    @State private var textLength: Int = 500
     @State private var manualStartingPosition: String = ""
     @State private var useManualStartingPosition: Bool = false
     @State private var activeAlert: AppAlert?
@@ -22,6 +18,7 @@ struct ContentView: View {
     @State private var benchmarkTimeline: BenchmarkTimeline?
     @State private var isDownloadingAudio = false
     @State private var audioErrorMessage: String?
+    @State private var isLoadingBookDetails = false
 
     var body: some View {
         ScrollView {
@@ -29,13 +26,8 @@ struct ContentView: View {
                 headerSection
                 bookMetadataSection
                 pipelineConfigurationSection
-                textConfigurationSection
                 actionButtonsSection
-                sessionInfoSection
-                booksSection
-                pipelineSummarySection
                 audioPreviewSection
-                textOutputSection
                 logSection
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -119,25 +111,59 @@ struct ContentView: View {
     }
 
     private var bookMetadataSection: some View {
-        GroupBox("Captured Book Data") {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("ASIN")
-                        .font(.subheadline.weight(.semibold))
-                    Spacer()
-                    Text(sessionStore.asin ?? "—")
-                        .font(.caption.monospaced())
-                        .foregroundStyle((sessionStore.asin?.isEmpty ?? true) ? .secondary : .primary)
-                }
+        GroupBox("Selected Book") {
+            VStack(spacing: 16) {
+                if isLoadingBookDetails {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 20)
+                } else if let details = sessionStore.bookDetails {
+                    VStack(spacing: 12) {
+                        AsyncImage(url: URL(string: details.coverImage)) { image in
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                        } placeholder: {
+                            Color.gray.opacity(0.3)
+                        }
+                        .frame(width: 120, height: 180)
+                        .cornerRadius(8)
+                        .shadow(radius: 4)
 
-                HStack {
-                    Text("Starting Position")
-                        .font(.subheadline.weight(.semibold))
-                    Spacer()
-                    Text(sessionStore.startingPosition ?? "—")
-                        .font(.caption.monospaced())
-                        .foregroundStyle((sessionStore.startingPosition?.isEmpty ?? true) ? .secondary : .primary)
+                        Text(details.title)
+                            .font(.headline)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(3)
+
+                        VStack(spacing: 4) {
+                            Text("Progress: \(String(format: "%.1f", details.progressPercent))%")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+
+                            Text("Position: \(details.currentPositionLabel)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                } else {
+                    Text("No book selected yet")
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 20)
                 }
+            }
+        }
+        .onChange(of: sessionStore.asin) { oldValue, newValue in
+            if let asin = newValue, !asin.isEmpty, oldValue != newValue {
+                Task { await fetchBookDetails(asin: asin) }
+            }
+        }
+        .onChange(of: sessionStore.startingPosition) { oldValue, newValue in
+            // Refresh book details when position changes (user navigated in Kindle)
+            if let asin = sessionStore.asin, !asin.isEmpty,
+               oldValue != newValue, newValue != nil {
+                Task { await fetchBookDetails(asin: asin) }
             }
         }
     }
@@ -155,163 +181,64 @@ struct ContentView: View {
         }
     }
 
-    private var textConfigurationSection: some View {
-        GroupBox("Text Retrieval") {
-            VStack(alignment: .leading, spacing: 12) {
-                Stepper("Start byte: \(textStart)", value: $textStart, in: 0...1_000_000, step: 100)
-                Stepper("Chunk length: \(textLength)", value: $textLength, in: 100...5000, step: 100)
-            }
-        }
-    }
-
     private var actionButtonsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Actions")
-                .font(.title3.bold())
-
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 12) {
-                    Button("Create Session") {
-                        Task { await createSession() }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(isPerformingRequest || !canCreateSession)
-
-                    Button("Fetch Books") {
-                        Task { await fetchBooks() }
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(isPerformingRequest)
-                }
-
-                HStack(spacing: 12) {
-                    Button("Start Audiobook") {
-                        Task { await startAudiobookPipeline() }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(isPerformingRequest || (sessionStore.asin?.isEmpty ?? true))
-
-                    Button("Get Text Chunk") {
-                        Task { await fetchTextChunk() }
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(isPerformingRequest)
-                }
-
+            Button("Start Audiobook") {
+                Task { await startAudiobookPipeline() }
             }
-        }
-    }
-
-    private var sessionInfoSection: some View {
-        GroupBox("Session") {
-            if let sessionId {
-                Text("Active session ID: \(sessionId)")
-                    .font(.caption.monospaced())
-            } else {
-                Text("No active session yet.")
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private var booksSection: some View {
-        GroupBox("Books") {
-            if books.isEmpty {
-                Text("No books fetched yet.")
-                    .foregroundStyle(.secondary)
-            } else {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(Array(books.enumerated()), id: \.element.id) { entry in
-                        Text("\(entry.offset + 1). \(entry.element.title) (\(entry.element.asin))")
-                            .font(.caption)
-                    }
-                }
-            }
-        }
-    }
-
-    private var pipelineSummarySection: some View {
-        GroupBox("Pipeline Summary") {
-            if let pipeline = latestPipeline {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Chunk ID: \(pipeline.chunkId)")
-                        .font(.caption)
-
-                    Text("Positions: \(pipeline.positionRange.startPositionId) → \(pipeline.positionRange.endPositionId)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-
-                    Text("Steps: \(pipeline.steps.map { $0.displayName }.joined(separator: ", "))")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-
-                    Text("Artifacts stored at \(pipeline.artifactsDir)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            } else {
-                Text("Pipeline has not been run yet.")
-                    .foregroundStyle(.secondary)
-            }
+            .buttonStyle(.borderedProminent)
+            .disabled(isPerformingRequest || sessionStore.bookDetails == nil)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
         }
     }
 
     private var audioPreviewSection: some View {
-        GroupBox("Audio Preview") {
-            if let pipeline = latestPipeline, let duration = pipeline.audioDurationSeconds {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Duration: \(formatDuration(duration))")
-                        .font(.caption)
+        VStack(spacing: 16) {
+            if let pipeline = latestPipeline, let _ = pipeline.audioDurationSeconds {
+                // Download button and status
+                VStack(spacing: 12) {
+                    Button(isDownloadingAudio ? "Downloading..." : "Download Audio") {
+                        Task { await downloadAudioPreview() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isDownloadingAudio)
+                    .frame(maxWidth: .infinity)
 
                     if let url = downloadedAudioURL {
-                        Text("Saved to: \(url.lastPathComponent)")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("Audio has not been downloaded yet.")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if let timeline = benchmarkTimeline {
-                        Text("Loaded \(timeline.checkpoints.count) checkpoints")
-                            .font(.caption2)
+                        Text("Audio ready: \(url.lastPathComponent)")
+                            .font(.caption)
                             .foregroundStyle(.secondary)
                     }
 
                     if let message = audioErrorMessage ?? playbackCoordinator.audioController.errorMessage {
                         Text(message)
-                            .font(.caption2)
+                            .font(.caption)
                             .foregroundColor(.red)
                     }
 
                     if let progressMessage = playbackCoordinator.progressErrorMessage {
                         Text(progressMessage)
-                            .font(.caption2)
+                            .font(.caption)
                             .foregroundColor(.orange)
                     }
+                }
 
-                    HStack(spacing: 12) {
-                        Button(isDownloadingAudio ? "Downloading..." : "Download Audio") {
-                            Task { await downloadAudioPreview() }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(isDownloadingAudio)
-
-                        Button(playbackCoordinator.audioController.isPlaying ? "Pause" : "Play") {
-                            if playbackCoordinator.audioController.isPlaying {
-                                playbackCoordinator.pause()
-                            } else {
-                                playbackCoordinator.play()
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(!playbackCoordinator.audioController.isReady)
-                    }
+                // Audio player card
+                if downloadedAudioURL != nil {
+                    AudioPlayerCardView(
+                        coordinator: playbackCoordinator,
+                        title: sessionStore.bookDetails?.title ?? "Kindle Audio Preview",
+                        coverImageURL: sessionStore.bookDetails?.coverImage
+                    )
                 }
             } else {
-                Text("Run the pipeline with OCR to generate an audio preview.")
-                    .foregroundStyle(.secondary)
+                GroupBox {
+                    Text("Run the pipeline to generate audio")
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 20)
+                }
             }
         }
     }
@@ -429,7 +356,6 @@ struct ContentView: View {
     private func createSession() async {
         guard ensureSessionInputs() else { return }
         latestPipeline = nil
-        latestTextChunk = nil
         resetAudioPlaybackState()
         do {
             let client = try makeClient()
@@ -443,19 +369,31 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func fetchBooks() async {
-        guard ensureSessionInputs() else { return }
+    private func fetchBookDetails(asin: String) async {
+        guard ensureSessionInputs() else {
+            isLoadingBookDetails = false
+            return
+        }
+
+        isLoadingBookDetails = true
+        defer { isLoadingBookDetails = false }
+
         do {
             let client = try makeClient()
             let sessionId = try await ensureSession(client: client)
-            isPerformingRequest = true
-            log("Fetching books...")
-            defer { isPerformingRequest = false }
+            log("Fetching book details for \(asin)...")
 
-            let response = try await client.fetchBooks(sessionId: sessionId)
-            books = response.books
-            log("Fetched \(response.books.count) book(s).")
+            let response = try await client.fetchFullDetails(sessionId: sessionId, asin: asin)
+            let details = BookDetails(
+                title: response.title,
+                coverImage: response.coverImage,
+                currentPosition: response.currentPosition,
+                length: response.length
+            )
+            sessionStore.updateBookDetails(details)
+            log("Book details loaded: \(response.title)")
         } catch {
+            isLoadingBookDetails = false
             logError(error)
         }
     }
@@ -478,8 +416,6 @@ struct ContentView: View {
             let request = APIClient.PipelineRequest(
                 startingPosition: startingPosition
             )
-
-            latestTextChunk = nil
             resetAudioPlaybackState()
             let response = try await client.runPipeline(sessionId: sessionId, asin: asin, request: request)
             latestPipeline = response
@@ -491,37 +427,6 @@ struct ContentView: View {
                 log("Pipeline finished. OCR completed for chunk \(response.chunkId).")
             } else {
                 log("Pipeline finished. chunkId=\(response.chunkId)")
-            }
-        } catch {
-            logError(error)
-        }
-    }
-
-    @MainActor
-    private func fetchTextChunk() async {
-        guard let metadata = ensureBookMetadata() else { return }
-        guard ensureSessionInputs() else { return }
-        let asin = metadata.asin
-
-        do {
-            let client = try makeClient()
-            let sessionId = try await ensureSession(client: client)
-            isPerformingRequest = true
-            let chunkId = latestPipeline?.chunkId
-            log("Fetching text chunk start=\(textStart) length=\(textLength) chunkId=\(chunkId ?? "latest")...")
-            defer { isPerformingRequest = false }
-
-            let response = try await client.fetchText(
-                sessionId: sessionId,
-                asin: asin,
-                start: textStart,
-                length: textLength,
-                chunkId: chunkId
-            )
-            latestTextChunk = response
-            log("Fetched text chunk (bytesRead=\(response.bytesRead)).")
-            if response.bytesRead > 0 {
-                textStart += response.bytesRead
             }
         } catch {
             logError(error)
@@ -561,10 +466,12 @@ struct ContentView: View {
 
             downloadedAudioURL = fileURL
             benchmarkTimeline = timeline
-            let title = books.first(where: { $0.asin == pipeline.asin })?.title ?? "Kindle Audio Preview"
+            let title = sessionStore.bookDetails?.title ?? "Kindle Audio Preview"
+            let coverImageURL = sessionStore.bookDetails?.coverImage
             playbackCoordinator.configure(
                 audioURL: fileURL,
                 title: title,
+                coverImageURL: coverImageURL,
                 timeline: timeline,
                 client: client,
                 sessionId: sessionId,
@@ -591,6 +498,7 @@ struct ContentView: View {
         guard let baseURL = try resolveBaseURL() else {
             throw ValidationError.invalidBaseURL
         }
+        log("API Base URL: \(baseURL.absoluteString)")
         return APIClient(baseURL: baseURL)
     }
 
@@ -613,7 +521,7 @@ struct ContentView: View {
             return nil
         }
 
-        let prefix = trimmed.contains("localhost") ? "http://" : "https://"
+        let prefix = trimmed.contains(":") ? "http://" : "https://"
         return URL(string: prefix + trimmed)
     }
 
@@ -745,23 +653,6 @@ private func ensureSession(client: APIClient) async throws -> String {
         }
 
         return raw
-    }
-    private var textOutputSection: some View {
-        GroupBox("Text Chunk") {
-            if let latestTextChunk {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(latestTextChunk.text)
-                        .font(.callout)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Text("Bytes read: \(latestTextChunk.bytesRead) • Has more: \(latestTextChunk.hasMore ? "yes" : "no")")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            } else {
-                Text("No text fetched yet.")
-                    .foregroundStyle(.secondary)
-            }
-        }
     }
 
     @MainActor

@@ -1,5 +1,21 @@
 import Foundation
 
+struct BookDetails {
+    let title: String
+    let coverImage: String
+    let currentPosition: Int
+    let length: Int
+
+    var progressPercent: Double {
+        guard length > 0 else { return 0 }
+        return (Double(currentPosition) / Double(length)) * 100
+    }
+
+    var currentPositionLabel: String {
+        return "\(currentPosition) / \(length)"
+    }
+}
+
 final class SessionStore: ObservableObject {
     @Published private(set) var cookies: [HTTPCookie] = []
     @Published private(set) var renderingToken: String?
@@ -9,6 +25,7 @@ final class SessionStore: ObservableObject {
     @Published private(set) var startingPosition: String?
     @Published private(set) var guid: String?
     @Published private(set) var asin: String?
+    @Published var bookDetails: BookDetails?
 
     func updateCookies(_ cookies: [HTTPCookie]) {
         DispatchQueue.main.async {
@@ -61,7 +78,18 @@ final class SessionStore: ObservableObject {
 
     func updateASIN(_ asin: String) {
         DispatchQueue.main.async {
-            self.asin = asin.trimmingCharacters(in: .whitespacesAndNewlines)
+            let newAsin = asin.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Only clear book details if ASIN actually changed
+            if self.asin != newAsin {
+                self.bookDetails = nil
+            }
+            self.asin = newAsin
+        }
+    }
+
+    func updateBookDetails(_ details: BookDetails) {
+        DispatchQueue.main.async {
+            self.bookDetails = details
         }
     }
 }

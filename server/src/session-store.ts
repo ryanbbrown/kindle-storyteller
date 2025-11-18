@@ -16,6 +16,7 @@ export type SessionContext = {
   createdAt: number;
   lastAccessedAt: number;
   booksCache: KindleBook[];
+  cache: Map<string, any>;
 };
 
 export type CreateSessionInput = {
@@ -51,6 +52,7 @@ export class SessionStore {
       createdAt: now,
       lastAccessedAt: now,
       booksCache: [...kindle.defaultBooks],
+      cache: new Map(),
     };
 
     this.sessions.set(sessionId, context);

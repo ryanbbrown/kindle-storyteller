@@ -54,6 +54,8 @@ export type ChunkPipelineState = {
   audioDurationSeconds?: number;
 };
 
+const MIN_EXISTING_RANGE_REMAINING_POSITIONS = 3000;
+
 /** Runs the download/OCR/audio stages for a Kindle chunk while skipping cached work. */
 export async function runChunkPipeline(
   options: RunChunkPipelineOptions
@@ -333,11 +335,16 @@ function selectMatchingRange(options: {
 }): CoverageRange | undefined {
   const { metadata, requestPositionId } = options;
   for (const range of metadata.ranges) {
-    if (
+    const withinRange =
       range.start.positionId === requestPositionId ||
       (requestPositionId >= range.start.positionId &&
-        requestPositionId <= range.end.positionId)
-    ) {
+        requestPositionId <= range.end.positionId);
+    if (!withinRange) {
+      continue;
+    }
+
+    const remainingPositions = range.end.positionId - requestPositionId;
+    if (remainingPositions > MIN_EXISTING_RANGE_REMAINING_POSITIONS) {
       return range;
     }
   }

@@ -68,7 +68,6 @@ RUN cd glyph-extraction && uv sync --frozen --no-dev
 
 # Copy the prebuilt Fastify server output into the runtime and ensure data dir exists.
 COPY server ./server
-RUN rm -rf ./server/node_modules ./server/dist
 COPY --from=server-builder /workspace/server/dist ./server/dist
 COPY --from=server-builder /workspace/server/node_modules ./server/node_modules
 COPY --from=server-builder /workspace/server/package.json ./server/package.json

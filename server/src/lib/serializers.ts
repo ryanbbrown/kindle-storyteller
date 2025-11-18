@@ -1,4 +1,4 @@
-import type { KindleBook } from "kindle-api";
+import type { KindleBook, KindleBookDetails } from "kindle-api";
 
 export type SerializedKindleBook = {
   asin: string;
@@ -9,6 +9,13 @@ export type SerializedKindleBook = {
   resourceType: string;
   mangaOrComicAsin: boolean;
   webReaderUrl: string;
+};
+
+export type SerializedBookDetails = {
+  title: string;
+  coverImage: string;
+  currentPosition: number;
+  length: number;
 };
 
 export function serializeBook(book: KindleBook): SerializedKindleBook {
@@ -26,4 +33,13 @@ export function serializeBook(book: KindleBook): SerializedKindleBook {
 
 export function serializeBooks(books: KindleBook[]): SerializedKindleBook[] {
   return books.map(serializeBook);
+}
+
+export function serializeBookDetails(details: KindleBookDetails): SerializedBookDetails {
+  return {
+    title: details.title,
+    coverImage: details.largeCoverUrl,
+    currentPosition: details.progress.position,
+    length: details.endPosition,
+  };
 }
