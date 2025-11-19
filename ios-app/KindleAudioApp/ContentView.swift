@@ -19,16 +19,20 @@ struct ContentView: View {
     @State private var isDownloadingAudio = false
     @State private var audioErrorMessage: String?
     @State private var isLoadingBookDetails = false
+    @State private var isGeneratingAudiobook = false
+    @State private var showLoginHint = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 headerSection
                 bookMetadataSection
-                pipelineConfigurationSection
+                // DEBUG MODE: UNCOMMENT
+                // pipelineConfigurationSection
                 actionButtonsSection
                 audioPreviewSection
-                logSection
+                // DEBUG MODE: UNCOMMENT
+                // logSection
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
@@ -82,6 +86,50 @@ struct ContentView: View {
                         }
                     }
                 }
+                .overlay(
+                    Group {
+                        if showLoginHint {
+                            VStack(spacing: 12) {
+                                Text("Log in and open the book you want to make an audiobook for")
+                                    .font(.body)
+                                    .multilineTextAlignment(.center)
+
+                                Button(action: {
+                                    withAnimation {
+                                        showLoginHint = false
+                                    }
+                                }) {
+                                    Text("Got it")
+                                        .font(.subheadline.bold())
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 20)
+                                        .padding(.vertical, 8)
+                                        .background(Color.accentColor)
+                                        .cornerRadius(8)
+                                }
+                            }
+                            .padding()
+                            .background(Color.black.opacity(0.85))
+                            .foregroundColor(.white)
+                            .cornerRadius(12)
+                            .padding()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                        }
+                    }
+                )
+            }
+            .onAppear {
+                showLoginHint = true
+                Task {
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    withAnimation {
+                        showLoginHint = false
+                    }
+                }
+            }
+            .onDisappear {
+                showLoginHint = false
             }
         }
         .alert(item: $activeAlert) { alert in
@@ -95,13 +143,13 @@ struct ContentView: View {
 
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Kindle Audio App")
+            Text("Kindle AI Audiobook")
                 .font(.largeTitle.bold())
 
             Button(action: { isPresentingLogin = true }) {
-                Text("Login")
+                Text("Open Kindle Web Viewer")
                     .font(.headline)
-                    .padding(.horizontal, 32)
+                    .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
                     .background(Color.accentColor)
                     .foregroundColor(.white)
@@ -168,26 +216,27 @@ struct ContentView: View {
         }
     }
 
-    private var pipelineConfigurationSection: some View {
-        GroupBox("Pipeline Options") {
-            VStack(alignment: .leading, spacing: 12) {
-                Toggle("Use manual starting position", isOn: $useManualStartingPosition)
-                if useManualStartingPosition {
-                    TextField("Enter starting position (e.g. 3698;0 or 210769)", text: $manualStartingPosition)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.caption.monospaced())
-                }
-            }
-        }
-    }
+    // DEBUG MODE: UNCOMMENT
+//    private var pipelineConfigurationSection: some View {
+//        GroupBox("Pipeline Options") {
+//            VStack(alignment: .leading, spacing: 12) {
+//                Toggle("Use manual starting position", isOn: $useManualStartingPosition)
+//                if useManualStartingPosition {
+//                    TextField("Enter starting position (e.g. 3698;0 or 210769)", text: $manualStartingPosition)
+//                        .textFieldStyle(.roundedBorder)
+//                        .font(.caption.monospaced())
+//                }
+//            }
+//        }
+//    }
 
     private var actionButtonsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Button("Start Audiobook") {
-                Task { await startAudiobookPipeline() }
+            Button(isGeneratingAudiobook ? "Generating..." : "Generate Audiobook") {
+                Task { await generateAudiobook() }
             }
             .buttonStyle(.borderedProminent)
-            .disabled(isPerformingRequest || sessionStore.bookDetails == nil)
+            .disabled(isGeneratingAudiobook || sessionStore.bookDetails == nil)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
         }
@@ -195,46 +244,40 @@ struct ContentView: View {
 
     private var audioPreviewSection: some View {
         VStack(spacing: 16) {
-            if let pipeline = latestPipeline, let _ = pipeline.audioDurationSeconds {
-                // Download button and status
-                VStack(spacing: 12) {
-                    Button(isDownloadingAudio ? "Downloading..." : "Download Audio") {
-                        Task { await downloadAudioPreview() }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(isDownloadingAudio)
-                    .frame(maxWidth: .infinity)
-
-                    if let url = downloadedAudioURL {
-                        Text("Audio ready: \(url.lastPathComponent)")
-                            .font(.caption)
+            if isGeneratingAudiobook {
+                // Loading state while generating
+                GroupBox {
+                    VStack(spacing: 16) {
+                        ProgressView()
+                            .scaleEffect(1.5)
+                        Text("Generating audiobook...")
                             .foregroundStyle(.secondary)
                     }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 30)
+                }
+            } else if let url = downloadedAudioURL {
+                // Audio player card when ready
+                AudioPlayerCardView(
+                    coordinator: playbackCoordinator,
+                    title: sessionStore.bookDetails?.title ?? "Kindle Audio Preview",
+                    coverImageURL: sessionStore.bookDetails?.coverImage
+                )
 
-                    if let message = audioErrorMessage ?? playbackCoordinator.audioController.errorMessage {
-                        Text(message)
-                            .font(.caption)
-                            .foregroundColor(.red)
-                    }
-
-                    if let progressMessage = playbackCoordinator.progressErrorMessage {
-                        Text(progressMessage)
-                            .font(.caption)
-                            .foregroundColor(.orange)
-                    }
+                if let message = audioErrorMessage ?? playbackCoordinator.audioController.errorMessage {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundColor(.red)
                 }
 
-                // Audio player card
-                if downloadedAudioURL != nil {
-                    AudioPlayerCardView(
-                        coordinator: playbackCoordinator,
-                        title: sessionStore.bookDetails?.title ?? "Kindle Audio Preview",
-                        coverImageURL: sessionStore.bookDetails?.coverImage
-                    )
+                if let progressMessage = playbackCoordinator.progressErrorMessage {
+                    Text(progressMessage)
+                        .font(.caption)
+                        .foregroundColor(.orange)
                 }
             } else {
                 GroupBox {
-                    Text("Run the pipeline to generate audio")
+                    Text("Tap 'Generate Audiobook' to create audio")
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 20)
@@ -243,25 +286,26 @@ struct ContentView: View {
         }
     }
 
-    private var logSection: some View {
-        GroupBox("Status Log") {
-            if statusLog.isEmpty {
-                Text("No actions yet.")
-                    .foregroundStyle(.secondary)
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(Array(statusLog.enumerated()), id: \.offset) { entry in
-                            Text(entry.element)
-                                .font(.caption.monospaced())
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-                }
-                .frame(minHeight: 120, maxHeight: 200)
-            }
-        }
-    }
+    // DEBUG MODE: UNCOMMENT
+//    private var logSection: some View {
+//        GroupBox("Status Log") {
+//            if statusLog.isEmpty {
+//                Text("No actions yet.")
+//                    .foregroundStyle(.secondary)
+//            } else {
+//                ScrollView {
+//                    VStack(alignment: .leading, spacing: 4) {
+//                        ForEach(Array(statusLog.enumerated()), id: \.offset) { entry in
+//                            Text(entry.element)
+//                                .font(.caption.monospaced())
+//                                .frame(maxWidth: .infinity, alignment: .leading)
+//                        }
+//                    }
+//                }
+//                .frame(minHeight: 120, maxHeight: 200)
+//            }
+//        }
+//    }
 
     private var canCreateSession: Bool {
         guard !cookieString.isEmpty else { return false }
@@ -394,6 +438,80 @@ struct ContentView: View {
             log("Book details loaded: \(response.title)")
         } catch {
             isLoadingBookDetails = false
+            logError(error)
+        }
+    }
+
+    @MainActor
+    private func generateAudiobook() async {
+        guard let metadata = ensureBookMetadata() else { return }
+        guard ensureSessionInputs() else { return }
+
+        let asin = metadata.asin
+        let startingPosition = resolveStartingPosition(defaultValue: metadata.startingPosition)
+
+        do {
+            let client = try makeClient()
+            isGeneratingAudiobook = true
+            resetAudioPlaybackState()
+            defer { isGeneratingAudiobook = false }
+
+            // Step 1: Run the pipeline
+            log("Starting pipeline for \(asin) at position \(startingPosition)...")
+            let sessionId = try await ensureSession(client: client)
+
+            let request = APIClient.PipelineRequest(
+                startingPosition: startingPosition
+            )
+            let response = try await client.runPipeline(sessionId: sessionId, asin: asin, request: request)
+            latestPipeline = response
+
+            let stepSummary = response.steps.map { $0.displayName }.joined(separator: ", ")
+            log("Pipeline steps completed: \(stepSummary)")
+
+            if response.steps.contains(.ocr) {
+                log("Pipeline finished. OCR completed for chunk \(response.chunkId).")
+            } else {
+                log("Pipeline finished. chunkId=\(response.chunkId)")
+            }
+
+            // Step 2: Download the audio
+            guard response.audioDurationSeconds != nil else {
+                log("Audio is not available from this pipeline run.")
+                return
+            }
+
+            log("Downloading audio preview for chunk \(response.chunkId)...")
+            let fileURL = try await client.downloadChunkAudio(
+                sessionId: sessionId,
+                asin: response.asin,
+                chunkId: response.chunkId
+            )
+
+            let benchmarks = try await client.fetchBenchmarks(
+                sessionId: sessionId,
+                asin: response.asin,
+                chunkId: response.chunkId
+            )
+
+            let timeline = BenchmarkTimeline(response: benchmarks)
+
+            downloadedAudioURL = fileURL
+            benchmarkTimeline = timeline
+            let title = sessionStore.bookDetails?.title ?? "Kindle Audio Preview"
+            let coverImageURL = sessionStore.bookDetails?.coverImage
+            playbackCoordinator.configure(
+                audioURL: fileURL,
+                title: title,
+                coverImageURL: coverImageURL,
+                timeline: timeline,
+                client: client,
+                sessionId: sessionId,
+                asin: response.asin
+            )
+            log("Audio preview saved to \(fileURL.lastPathComponent).")
+            log("Loaded \(timeline.checkpoints.count) benchmark checkpoints.")
+        } catch {
             logError(error)
         }
     }
