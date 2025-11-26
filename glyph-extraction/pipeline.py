@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
-import subprocess
-import tempfile
+import os
 from pathlib import Path
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict, List
+
+import requests
+from dotenv import load_dotenv
 
 from render_page import render_page, resolve_versioned_json
+
+load_dotenv()
 
 
 def parse_args() -> argparse.Namespace:
@@ -38,26 +41,24 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def detect_tesseract() -> bool:
-    return shutil.which("tesseract") is not None
-
-
-def run_tesseract(png_path: Path) -> str | None:
-    with tempfile.TemporaryDirectory() as tmpdir:
-        output_base = Path(tmpdir) / "ocr"
-
-        try:
-            subprocess.run(
-                ["tesseract", str(png_path), str(output_base)],
-                check=True,
-                capture_output=True,
-            )
-            txt_path = output_base.with_suffix(".txt")
-            if txt_path.exists():
-                return txt_path.read_text(encoding="utf-8", errors="ignore")
-            return None
-        except subprocess.CalledProcessError:
-            return None
+def run_ocr(png_path: Path, api_key: str) -> str | None:
+    """Run OCR using OCR.space API."""
+    payload = {"isOverlayRequired": False, "apikey": api_key, "language": "eng"}
+    with open(png_path, "rb") as f:
+        response = requests.post(
+            "https://api.ocr.space/parse/image",
+            files={"file": f},
+            data=payload,
+        )
+    if response.status_code != 200:
+        return None
+    result = response.json()
+    if result.get("IsErroredOnProcessing"):
+        return None
+    parsed_results = result.get("ParsedResults", [])
+    if not parsed_results:
+        return None
+    return parsed_results[0].get("ParsedText")
 
 
 def load_page_data(extract_root: Path) -> List[Dict[str, Any]]:
@@ -129,7 +130,8 @@ def main() -> None:
     combined_text: List[str] = []
 
     processed_pages: List[Dict[str, Any]] = []
-    ocr_enabled = detect_tesseract()
+    api_key = os.environ.get("OCRSPACE_API_KEY")
+    ocr_enabled = api_key is not None
 
     for page_index in range(start_index, end_index):
         png_path = render_page(
@@ -139,7 +141,7 @@ def main() -> None:
         )
 
         if ocr_enabled:
-            text_data = run_tesseract(png_path)
+            text_data = run_ocr(png_path, api_key)
             if text_data:
                 combined_text.append(text_data)
 

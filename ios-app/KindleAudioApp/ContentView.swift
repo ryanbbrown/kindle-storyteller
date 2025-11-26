@@ -28,11 +28,11 @@ struct ContentView: View {
                 headerSection
                 bookMetadataSection
                 // DEBUG MODE: UNCOMMENT
-                // pipelineConfigurationSection
+                pipelineConfigurationSection
                 actionButtonsSection
                 audioPreviewSection
                 // DEBUG MODE: UNCOMMENT
-                // logSection
+                logSection
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
@@ -217,18 +217,18 @@ struct ContentView: View {
     }
 
     // DEBUG MODE: UNCOMMENT
-//    private var pipelineConfigurationSection: some View {
-//        GroupBox("Pipeline Options") {
-//            VStack(alignment: .leading, spacing: 12) {
-//                Toggle("Use manual starting position", isOn: $useManualStartingPosition)
-//                if useManualStartingPosition {
-//                    TextField("Enter starting position (e.g. 3698;0 or 210769)", text: $manualStartingPosition)
-//                        .textFieldStyle(.roundedBorder)
-//                        .font(.caption.monospaced())
-//                }
-//            }
-//        }
-//    }
+   private var pipelineConfigurationSection: some View {
+       GroupBox("Pipeline Options") {
+           VStack(alignment: .leading, spacing: 12) {
+               Toggle("Use manual starting position", isOn: $useManualStartingPosition)
+               if useManualStartingPosition {
+                   TextField("Enter starting position (e.g. 3698;0 or 210769)", text: $manualStartingPosition)
+                       .textFieldStyle(.roundedBorder)
+                       .font(.caption.monospaced())
+               }
+           }
+       }
+   }
 
     private var actionButtonsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -287,25 +287,25 @@ struct ContentView: View {
     }
 
     // DEBUG MODE: UNCOMMENT
-//    private var logSection: some View {
-//        GroupBox("Status Log") {
-//            if statusLog.isEmpty {
-//                Text("No actions yet.")
-//                    .foregroundStyle(.secondary)
-//            } else {
-//                ScrollView {
-//                    VStack(alignment: .leading, spacing: 4) {
-//                        ForEach(Array(statusLog.enumerated()), id: \.offset) { entry in
-//                            Text(entry.element)
-//                                .font(.caption.monospaced())
-//                                .frame(maxWidth: .infinity, alignment: .leading)
-//                        }
-//                    }
-//                }
-//                .frame(minHeight: 120, maxHeight: 200)
-//            }
-//        }
-//    }
+   private var logSection: some View {
+       GroupBox("Status Log") {
+           if statusLog.isEmpty {
+               Text("No actions yet.")
+                   .foregroundStyle(.secondary)
+           } else {
+               ScrollView {
+                   VStack(alignment: .leading, spacing: 4) {
+                       ForEach(Array(statusLog.enumerated()), id: \.offset) { entry in
+                           Text(entry.element)
+                               .font(.caption.monospaced())
+                               .frame(maxWidth: .infinity, alignment: .leading)
+                       }
+                   }
+               }
+               .frame(minHeight: 120, maxHeight: 200)
+           }
+       }
+   }
 
     private var canCreateSession: Bool {
         guard !cookieString.isEmpty else { return false }
