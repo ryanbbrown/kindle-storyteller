@@ -2,25 +2,6 @@ import Foundation
 import QuartzCore
 import UIKit
 
-struct BenchmarkTimeline {
-    let duration: TimeInterval
-    let checkpoints: [Checkpoint]
-
-    struct Checkpoint {
-        let time: TimeInterval
-        let kindlePositionIdStart: Int
-    }
-}
-
-extension BenchmarkTimeline {
-    init(response: APIClient.BenchmarkResponse) {
-        self.duration = response.totalDurationSeconds
-        self.checkpoints = response.benchmarks.map { entry in
-            BenchmarkTimeline.Checkpoint(time: entry.timeSeconds, kindlePositionIdStart: entry.kindlePositionIdStart)
-        }
-    }
-}
-
 @MainActor
 final class ProgressUpdateScheduler: NSObject {
     typealias TimeProvider = () -> TimeInterval
@@ -152,7 +133,7 @@ final class ProgressUpdateScheduler: NSObject {
         if let schedulerError = error as? SchedulerError {
             return schedulerError.localizedDescription ?? "Progress update failed."
         }
-        if let apiError = error as? APIClient.APIError {
+        if let apiError = error as? APIError {
             return apiError.localizedDescription ?? "Progress update failed."
         }
         return error.localizedDescription

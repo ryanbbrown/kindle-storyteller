@@ -18,6 +18,13 @@
 		A2F8D37B2D3F90A600BB3E4F /* PlaybackCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2F8D37A2D3F90A600BB3E4F /* PlaybackCoordinator.swift */; };
 		A2F8D37D2D3F90A600BB3E4F /* ProgressUpdateScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2F8D37C2D3F90A600BB3E4F /* ProgressUpdateScheduler.swift */; };
 		56468736AF01426BB42667CC /* AudioPlayerCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 990112A12A144F5F881A63AA /* AudioPlayerCardView.swift */; };
+		REFACTOR001 /* APIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = REFACTOR101 /* APIModels.swift */; };
+		REFACTOR002 /* BookDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = REFACTOR102 /* BookDetails.swift */; };
+		REFACTOR003 /* BenchmarkTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = REFACTOR103 /* BenchmarkTimeline.swift */; };
+		REFACTOR004 /* ValidationError.swift in Sources */ = {isa = PBXBuildFile; fileRef = REFACTOR104 /* ValidationError.swift */; };
+		REFACTOR005 /* StringExtensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = REFACTOR105 /* StringExtensions.swift */; };
+		REFACTOR006 /* SessionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = REFACTOR106 /* SessionService.swift */; };
+		REFACTOR007 /* ContentViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = REFACTOR107 /* ContentViewModel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -36,6 +43,13 @@
 		A2F8D37A2D3F90A600BB3E4F /* PlaybackCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackCoordinator.swift; sourceTree = "<group>"; };
 		A2F8D37C2D3F90A600BB3E4F /* ProgressUpdateScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressUpdateScheduler.swift; sourceTree = "<group>"; };
 		990112A12A144F5F881A63AA /* AudioPlayerCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayerCardView.swift; sourceTree = "<group>"; };
+		REFACTOR101 /* APIModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIModels.swift; sourceTree = "<group>"; };
+		REFACTOR102 /* BookDetails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookDetails.swift; sourceTree = "<group>"; };
+		REFACTOR103 /* BenchmarkTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchmarkTimeline.swift; sourceTree = "<group>"; };
+		REFACTOR104 /* ValidationError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ValidationError.swift; sourceTree = "<group>"; };
+		REFACTOR105 /* StringExtensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StringExtensions.swift; sourceTree = "<group>"; };
+		REFACTOR106 /* SessionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionService.swift; sourceTree = "<group>"; };
+		REFACTOR107 /* ContentViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentViewModel.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -74,6 +88,10 @@
 				A2F8D3612D3F3F0300BB3E4F /* APIClient.swift */,
 				A2F8D33B2D3F3E8100BB3E4F /* Assets.xcassets */,
 				A2F8D3672D3F553800BB3E4F /* Resources */,
+				REFACTOR201 /* Models */,
+				REFACTOR202 /* Services */,
+				REFACTOR203 /* Shared */,
+				REFACTOR205 /* ViewModels */,
 			);
 			path = KindleAudioApp;
 			sourceTree = "<group>";
@@ -92,6 +110,49 @@
 				A2F8D3652D3F553800BB3E4F /* webhooks.js */,
 			);
 			path = Resources;
+			sourceTree = "<group>";
+		};
+		REFACTOR201 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				REFACTOR101 /* APIModels.swift */,
+				REFACTOR102 /* BookDetails.swift */,
+				REFACTOR103 /* BenchmarkTimeline.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		REFACTOR202 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				REFACTOR106 /* SessionService.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		REFACTOR203 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				REFACTOR204 /* Utilities */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		REFACTOR204 /* Utilities */ = {
+			isa = PBXGroup;
+			children = (
+				REFACTOR104 /* ValidationError.swift */,
+				REFACTOR105 /* StringExtensions.swift */,
+			);
+			path = Utilities;
+			sourceTree = "<group>";
+		};
+		REFACTOR205 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				REFACTOR107 /* ContentViewModel.swift */,
+			);
+			path = ViewModels;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -173,6 +234,13 @@
 				A2F8D37D2D3F90A600BB3E4F /* ProgressUpdateScheduler.swift in Sources */,
 				A2F8D36A2D3F7FA500BB3E4F /* AudioPlaybackController.swift in Sources */,
 				56468736AF01426BB42667CC /* AudioPlayerCardView.swift in Sources */,
+				REFACTOR001 /* APIModels.swift in Sources */,
+				REFACTOR002 /* BookDetails.swift in Sources */,
+				REFACTOR003 /* BenchmarkTimeline.swift in Sources */,
+				REFACTOR004 /* ValidationError.swift in Sources */,
+				REFACTOR005 /* StringExtensions.swift in Sources */,
+				REFACTOR006 /* SessionService.swift in Sources */,
+				REFACTOR007 /* ContentViewModel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
