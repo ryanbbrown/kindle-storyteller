@@ -83,3 +83,10 @@ The repository includes a multi-stage `Dockerfile`, process supervisor (`start.s
    The container installs Node 20, Python 3.12 + uv, and builds the Go TLS proxy. The `start.sh` entrypoint boots the TLS proxy first, then starts the Fastify server.
 
 4. **Point the iOS app at Fly** – update `API_BASE_HOST` in your `Config.xcconfig` to your Fly hostname.
+
+## Backlog
+- Audio re-generation for the same part of the book with a different provider
+- Improve linear interpolation for character to position map
+- Cartesia/ElevenLabs voice demo + selection within app
+- Specification of duration for audio to be generated (currently does it for full content download, ~8 mins)
+- If using already generated audio and the user's position is in the middle of the range, automatically set the audio playback to the correct time

@@ -1,22 +1,18 @@
 /**
- * - generateChunkPreviewAudio: exported entry reading text, limiting it via computeSentenceSliceLength, calling getElevenLabsClient, and persisting artifacts with buildBenchmark helpers.
- * - recordChunkAudioArtifacts: updates metadata with the paths emitted by generateChunkPreviewAudio for later reuse.
- * - normalizeTextWithMap: preprocesses text and produces char maps consumed by generateChunkPreviewAudio and buildBenchmarks.
- * - computeSentenceSliceLength: selects the normalized text span used for TTS.
- * - buildBenchmarkTimeline: defines benchmark timestamps that collectSamples converts into alignment indices.
- * - collectSamples: maps alignment data to benchmark entries before buildBenchmarks composes Kindle position ids.
- * - buildBenchmarks: ties timestamps to Kindle position ids, leveraging normalization maps.
- * - getElevenLabsClient: lazily creates the ElevenLabs SDK client consumed by generateChunkPreviewAudio.
+ * ElevenLabs TTS audio generation service with character-level timestamp support.
  */
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
 import fs from "node:fs/promises";
 import path from "node:path";
 
 import {
-  readChunkMetadata,
-  writeChunkMetadata,
-} from "./chunk-metadata-service.js";
-import type { RendererCoverageMetadata } from "../types/chunk-metadata.js";
+  normalizeTextWithMap,
+  computeSentenceSliceLength,
+  buildCharToPositionIdMap,
+  computeProportionalEndPosition,
+  buildBenchmarkTimeline,
+  recordChunkAudioArtifacts,
+} from "./audio-utils.js";
 import type {
   BenchmarkEntry,
   ChunkAudioSummary,
@@ -24,6 +20,7 @@ import type {
 } from "../types/audio.js";
 import { getElevenLabsAudioConfig } from "../config/elevenlabs.js";
 
+export { recordChunkAudioArtifacts };
 export type { BenchmarkEntry, ChunkAudioSummary, GenerateChunkAudioOptions };
 
 // Reuse a single SDK client so we do not re-auth on every request.
@@ -97,10 +94,17 @@ export async function generateChunkPreviewAudio(
       activeAlignment.characterEndTimesSeconds.length - 1
     ];
 
+  const proportionalEndPositionId = computeProportionalEndPosition({
+    processedTextLength: textForTts.length,
+    fullTextLength: normalizedText.length,
+    startPositionId: range.start.positionId,
+    endPositionId: range.end.positionId,
+  });
+
   const charToKindlePositionId = buildCharToPositionIdMap({
     textLength: charToOriginalIndex.length,
     startPositionId: range.start.positionId,
-    endPositionId: range.end.positionId,
+    endPositionId: proportionalEndPositionId,
   });
 
   // Build benchmark records so the client can scrub audio deterministically.
@@ -115,7 +119,7 @@ export async function generateChunkPreviewAudio(
     rawText,
     charToOriginalIndex,
     charToKindlePositionId,
-    endPositionId: range.end.positionId,
+    endPositionId: proportionalEndPositionId,
     totalDurationSeconds,
   });
 
@@ -172,135 +176,6 @@ export async function generateChunkPreviewAudio(
     totalDurationSeconds,
     benchmarkIntervalSeconds: config.benchmarkIntervalSeconds,
   };
-}
-
-/** Stores the generated audio artifacts back onto the chunk metadata record. */
-export async function recordChunkAudioArtifacts(options: {
-  metadataPath: string;
-  metadata?: RendererCoverageMetadata;
-  chunkId: string;
-  summary: ChunkAudioSummary;
-}): Promise<RendererCoverageMetadata | undefined> {
-  const { metadataPath, metadata: providedMetadata, chunkId, summary } = options;
-  const metadata =
-    providedMetadata ?? (await readChunkMetadata(metadataPath));
-  if (!metadata) {
-    return undefined;
-  }
-
-  // Attach the generated artifact paths to the matching coverage range.
-  const targetRange = metadata.ranges.find((range) => range.id === chunkId);
-  if (!targetRange) {
-    return metadata;
-  }
-
-  targetRange.artifacts.audioPath = summary.audioPath;
-  targetRange.artifacts.audioAlignmentPath = summary.alignmentPath;
-  targetRange.artifacts.audioBenchmarksPath = summary.benchmarksPath;
-  const now = new Date().toISOString();
-  metadata.updatedAt = now;
-  targetRange.updatedAt = now;
-  await writeChunkMetadata(metadataPath, metadata);
-  return metadata;
-}
-
-/** Normalizes whitespace and tracks original indices for each character. */
-function normalizeTextWithMap(input: string): {
-  normalized: string;
-  map: number[];
-} {
-  let normalized = "";
-  const map: number[] = [];
-
-  for (let index = 0; index < input.length; index += 1) {
-    let char = input[index];
-
-    // Drop carriage returns so offsets match OSX/Linux alike.
-    if (char === "\r") {
-      continue;
-    }
-
-    // Collapse any whitespace run into a single space.
-    if (/\s/.test(char)) {
-      char = " ";
-    }
-
-    normalized += char;
-    map.push(index);
-  }
-
-  return { normalized, map };
-}
-
-/** Picks a slice length that ends on the target sentence count. */
-function computeSentenceSliceLength(
-  text: string,
-  targetSentences: number,
-): number {
-  const cap = Math.max(1, text.length);
-  if (!Number.isFinite(targetSentences) || targetSentences <= 0) {
-    return cap;
-  }
-
-  let sentences = 0;
-  for (let index = 0; index < cap; index += 1) {
-    const char = text[index];
-    if (char === "." || char === "!" || char === "?") {
-      sentences += 1;
-      if (sentences >= targetSentences) {
-        return index + 1;
-      }
-    }
-  }
-
-  return cap;
-}
-
-// TODO: make this smarter (both incomplete audio and non-linear effects)
-function buildCharToPositionIdMap(options: {
-  textLength: number;
-  startPositionId: number;
-  endPositionId: number;
-}): number[] {
-  const { textLength, startPositionId, endPositionId } = options;
-  if (!Number.isFinite(startPositionId) || !Number.isFinite(endPositionId)) {
-    throw new Error("Chunk metadata is missing Kindle position ids");
-  }
-  if (textLength <= 0) {
-    return [];
-  }
-
-  const steps = Math.max(textLength - 1, 1);
-  const span = endPositionId - startPositionId;
-  const result = new Array<number>(textLength);
-
-  for (let index = 0; index < textLength; index += 1) {
-    const ratio = steps === 0 ? 0 : index / steps;
-    const value = Math.round(startPositionId + span * ratio);
-    result[index] = value;
-  }
-
-  return result;
-}
-
-/** Builds the timeline of timestamps at which benchmarks should be recorded. */
-function buildBenchmarkTimeline(
-  totalDurationSeconds: number,
-  intervalSeconds: number,
-): number[] {
-  const times: number[] = [];
-  for (
-    let t = 0;
-    t <= totalDurationSeconds;
-    t += Math.max(intervalSeconds, 0.1)
-  ) {
-    // Round to milliseconds to keep payload small but precise.
-    times.push(Number(t.toFixed(3)));
-  }
-
-  // Don't add totalDurationSeconds as a separate entry - the last interval
-  // will be extended to cover the full duration in buildBenchmarks
-  return times;
 }
 
 /** Maps each benchmark timestamp to the nearest preceding character index. */
