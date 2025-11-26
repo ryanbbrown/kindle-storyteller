@@ -13,12 +13,13 @@ export type ElevenLabsAudioConfig = {
 
 let cachedAudioConfig: ElevenLabsAudioConfig | undefined;
 
-const DEFAULT_OUTPUT_FORMAT: TextToSpeechConvertWithTimestampsRequestOutputFormat =
-  OutputFormatEnum.Mp344100128;
+const DEFAULT_OUTPUT_FORMAT: TextToSpeechConvertWithTimestampsRequestOutputFormat = OutputFormatEnum.Mp344100128;
 const BENCHMARK_INTERVAL_SECONDS = 5;
+// George voice - warm resonance that instantly captivates listeners
+// See more voices at: data/elevenlabs-voices.json or https://elevenlabs.io/app/voice-library
 const DEFAULT_VOICE_ID = "JBFqnCBsd6RMkjVDRZzb";
 const DEFAULT_MODEL_ID = "eleven_flash_v2_5";
-export const ELEVENLABS_SENTENCE_TARGET = 1;
+export const ELEVENLABS_SENTENCE_TARGET = 2;
 
 /** Returns the cached ElevenLabs configuration derived from environment defaults. */
 export function getElevenLabsAudioConfig(): ElevenLabsAudioConfig {

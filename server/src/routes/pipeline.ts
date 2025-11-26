@@ -14,6 +14,7 @@ type PipelineParams = {
 
 type PipelineBody = {
   startingPosition?: number | string;
+  audioProvider: "cartesia" | "elevenlabs";
 };
 
 type PipelineResponse = ChunkPipelineState;
@@ -47,12 +48,20 @@ export async function registerPipelineRoutes(
         .send({ message: "startingPosition is required" } as never);
     }
 
+    const audioProvider = request.body?.audioProvider;
+    if (audioProvider !== "cartesia" && audioProvider !== "elevenlabs") {
+      return reply
+        .status(400)
+        .send({ message: "audioProvider must be 'cartesia' or 'elevenlabs'" } as never);
+    }
+
     const options: RunChunkPipelineOptions = {
       asin,
       kindle: session.kindle,
       renderingToken: session.renderingToken,
       rendererRevision: session.rendererRevision,
       startingPosition,
+      audioProvider: request.body?.audioProvider,
     };
 
     try {

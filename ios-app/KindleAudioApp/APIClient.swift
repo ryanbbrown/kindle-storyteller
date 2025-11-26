@@ -215,6 +215,7 @@ struct APIClient {
 
     struct PipelineRequest: Encodable {
         let startingPosition: String
+        let audioProvider: String
     }
 
     struct PipelineResponse: Decodable, Equatable {

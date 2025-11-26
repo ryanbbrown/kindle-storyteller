@@ -21,6 +21,8 @@ struct ContentView: View {
     @State private var isLoadingBookDetails = false
     @State private var isGeneratingAudiobook = false
     @State private var showLoginHint = false
+    @State private var hasShownLoginHint = false
+    @State private var selectedAudioProvider: String = "cartesia"
 
     var body: some View {
         ScrollView {
@@ -104,7 +106,7 @@ struct ContentView: View {
                                         .foregroundColor(.white)
                                         .padding(.horizontal, 20)
                                         .padding(.vertical, 8)
-                                        .background(Color.accentColor)
+                                        .background(Color.gray.opacity(0.6))
                                         .cornerRadius(8)
                                 }
                             }
@@ -120,11 +122,14 @@ struct ContentView: View {
                 )
             }
             .onAppear {
-                showLoginHint = true
-                Task {
-                    try? await Task.sleep(nanoseconds: 3_000_000_000)
-                    withAnimation {
-                        showLoginHint = false
+                if !hasShownLoginHint {
+                    hasShownLoginHint = true
+                    showLoginHint = true
+                    Task {
+                        try? await Task.sleep(nanoseconds: 3_000_000_000)
+                        withAnimation {
+                            showLoginHint = false
+                        }
                     }
                 }
             }
@@ -232,6 +237,8 @@ struct ContentView: View {
 
     private var actionButtonsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
+            audioProviderPicker
+
             Button(isGeneratingAudiobook ? "Generating..." : "Generate Audiobook") {
                 Task { await generateAudiobook() }
             }
@@ -240,6 +247,33 @@ struct ContentView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
         }
+    }
+
+    private var audioProviderPicker: some View {
+        HStack(spacing: 0) {
+            Button(action: { selectedAudioProvider = "elevenlabs" }) {
+                Text("ElevenLabs")
+                    .font(.subheadline.weight(.medium))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(selectedAudioProvider == "elevenlabs" ? Color.accentColor : Color.gray.opacity(0.2))
+                    .foregroundColor(selectedAudioProvider == "elevenlabs" ? .white : .primary)
+            }
+
+            Button(action: { selectedAudioProvider = "cartesia" }) {
+                Text("Cartesia")
+                    .font(.subheadline.weight(.medium))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(selectedAudioProvider == "cartesia" ? Color.accentColor : Color.gray.opacity(0.2))
+                    .foregroundColor(selectedAudioProvider == "cartesia" ? .white : .primary)
+            }
+        }
+        .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+        )
     }
 
     private var audioPreviewSection: some View {
@@ -461,7 +495,8 @@ struct ContentView: View {
             let sessionId = try await ensureSession(client: client)
 
             let request = APIClient.PipelineRequest(
-                startingPosition: startingPosition
+                startingPosition: startingPosition,
+                audioProvider: selectedAudioProvider
             )
             let response = try await client.runPipeline(sessionId: sessionId, asin: asin, request: request)
             latestPipeline = response
@@ -532,7 +567,8 @@ struct ContentView: View {
             defer { isPerformingRequest = false }
 
             let request = APIClient.PipelineRequest(
-                startingPosition: startingPosition
+                startingPosition: startingPosition,
+                audioProvider: selectedAudioProvider
             )
             resetAudioPlaybackState()
             let response = try await client.runPipeline(sessionId: sessionId, asin: asin, request: request)

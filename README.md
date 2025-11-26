@@ -67,11 +67,12 @@ The repository includes a multi-stage `Dockerfile`, process supervisor (`start.s
    ```
    Adjust the generated app name/region inside `fly.toml` if needed.
 
-2. **Configure secrets** – set the TLS proxy key and (optionally) ElevenLabs API key:
+2. **Configure secrets** – set the TLS proxy key and TTS API keys:
    ```bash
    fly secrets set \
      TLS_SERVER_API_KEY="replace-me" \
-     ELEVENLABS_API_KEY="optional"
+     ELEVENLABS_API_KEY="your-key" \
+     CARTESIA_API_KEY="your-key"
    ```
    All Kindle cookies/tokens must come from the iOS client; there's no server-side fallback.
 

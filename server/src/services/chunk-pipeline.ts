@@ -23,17 +23,13 @@ import {
   type ChunkAudioSummary,
 } from "./elevenlabs-audio.js";
 import { generateChunkPreviewAudio as generateCartesiaAudio } from "./cartesia-audio.js";
-import { env } from "../env.js";
 import { readChunkMetadata } from "./chunk-metadata-service.js";
 import { openBenchmarkPayload } from "../lib/benchmarks.js";
+import { env } from "../env.js";
 import type {
   CoverageRange,
   RendererCoverageMetadata,
 } from "../types/chunk-metadata.js";
-
-/** Generates audio using the configured TTS provider. */
-const generateChunkPreviewAudio =
-  env.ttsProvider === "cartesia" ? generateCartesiaAudio : generateElevenLabsAudio;
 
 type PipelineStep = "download" | "ocr" | "audio";
 
@@ -43,6 +39,7 @@ export type RunChunkPipelineOptions = {
   renderingToken: string;
   rendererRevision: string;
   startingPosition: number | string;
+  audioProvider: "cartesia" | "elevenlabs";
 };
 
 export type ChunkPipelinePositionRange = {
@@ -140,7 +137,10 @@ export async function runChunkPipeline(
   const shouldRunAudio = plan.needsAudio || shouldRunOcr;
   if (shouldRunAudio && targetRange) {
     executedSteps.push("audio");
-    audioResult = await generateChunkPreviewAudio({
+    const generateAudio = options.audioProvider === "elevenlabs"
+      ? generateElevenLabsAudio
+      : generateCartesiaAudio;
+    audioResult = await generateAudio({
       asin: activeChunk.asin,
       chunkId: activeChunk.chunkId,
       chunkDir: activeChunk.chunkDir,
