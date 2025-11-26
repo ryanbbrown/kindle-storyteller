@@ -17,13 +17,15 @@ import {
   type ChunkArtifacts,
 } from "./download.js";
 import { runChunkOcr, type RunChunkOcrResult } from "./ocr.js";
-import { generateChunkPreviewAudio as generateElevenLabsAudio } from "./elevenlabs-audio.js";
-import { generateChunkPreviewAudio as generateCartesiaAudio } from "./cartesia-audio.js";
-import { recordChunkAudioArtifacts } from "./audio-utils.js";
+import {
+  generateElevenLabsAudio,
+  generateCartesiaAudio,
+  recordChunkAudioArtifacts,
+} from "./tts/index.js";
 import type { ChunkAudioSummary } from "../types/audio.js";
 import { readChunkMetadata } from "./chunk-metadata-service.js";
-import { openBenchmarkPayload } from "../lib/benchmarks.js";
-import { env } from "../env.js";
+import { openBenchmarkPayload } from "../utils/benchmarks.js";
+import { env } from "../config/env.js";
 import type {
   CoverageRange,
   RendererCoverageMetadata,

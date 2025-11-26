@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 
 import type { SessionStore } from "../session-store.js";
-import { serializeBooks, serializeBookDetails } from "../lib/serializers.js";
+import { serializeBooks, serializeBookDetails } from "../utils/serializers.js";
 import { requireSession } from "../utils/auth.js";
 
 type BooksQuerystring = {

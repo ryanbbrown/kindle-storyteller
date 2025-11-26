@@ -16,7 +16,7 @@ import { promisify } from "node:util";
 
 import type { Kindle, TLSClientRequestPayload } from "kindle-api";
 
-import { env } from "../env.js";
+import { env } from "../config/env.js";
 import { writeChunkMetadata } from "./chunk-metadata-service.js";
 import type {
   CoverageRange,

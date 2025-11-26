@@ -5,7 +5,7 @@ import { requireSession } from "../utils/auth.js";
 import {
   openBenchmarkPayload,
   type BenchmarkPayload,
-} from "../lib/benchmarks.js";
+} from "../utils/benchmarks.js";
 
 type BenchmarkParams = {
   asin: string;

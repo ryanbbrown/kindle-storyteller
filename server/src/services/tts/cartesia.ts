@@ -14,14 +14,14 @@ import {
   buildCharToPositionIdMap,
   computeProportionalEndPosition,
   buildBenchmarkTimeline,
-} from "./audio-utils.js";
+} from "./utils.js";
 import type {
   BenchmarkEntry,
   ChunkAudioSummary,
   GenerateChunkAudioOptions,
   WordTimestamps,
-} from "../types/audio.js";
-import { getCartesiaAudioConfig } from "../config/cartesia.js";
+} from "../../types/audio.js";
+import { getCartesiaAudioConfig } from "../../config/cartesia.js";
 
 export type { BenchmarkEntry, ChunkAudioSummary, GenerateChunkAudioOptions };
 

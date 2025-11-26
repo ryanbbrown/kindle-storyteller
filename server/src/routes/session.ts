@@ -1,9 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import type { KindleRequiredCookies } from "kindle-api";
 
-import { env } from "../env.js";
+import { env } from "../config/env.js";
 import type { SessionStore } from "../session-store.js";
-import { serializeBooks } from "../lib/serializers.js";
+import { serializeBooks } from "../utils/serializers.js";
 
 type SessionRequestBody = {
   cookieString?: string;

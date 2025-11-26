@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 
-import { env } from "./env.js";
+import { env } from "./config/env.js";
 import { SessionStore } from "./session-store.js";
 import { registerSessionRoutes } from "./routes/session.js";
 import { registerBooksRoutes } from "./routes/books.js";

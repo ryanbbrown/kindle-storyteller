@@ -3,7 +3,7 @@ import { createReadStream } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { env } from "../env.js";
+import { env } from "../config/env.js";
 import type { SessionStore } from "../session-store.js";
 import { requireSession } from "../utils/auth.js";
 

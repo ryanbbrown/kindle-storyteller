@@ -3,7 +3,7 @@ import path from "node:path";
 
 import type { FastifyInstance } from "fastify";
 
-import { env } from "../env.js";
+import { env } from "../config/env.js";
 import type { SessionStore } from "../session-store.js";
 import { requireSession } from "../utils/auth.js";
 

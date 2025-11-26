@@ -7,9 +7,9 @@ import fs from "node:fs/promises";
 import {
   readChunkMetadata,
   writeChunkMetadata,
-} from "./chunk-metadata-service.js";
-import type { RendererCoverageMetadata } from "../types/chunk-metadata.js";
-import type { ChunkAudioSummary } from "../types/audio.js";
+} from "../chunk-metadata-service.js";
+import type { RendererCoverageMetadata } from "../../types/chunk-metadata.js";
+import type { ChunkAudioSummary } from "../../types/audio.js";
 
 /** Normalizes whitespace and tracks original indices for each character. */
 export function normalizeTextWithMap(input: string): {

@@ -1,8 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { env } from "../env.js";
-import type { BenchmarkEntry } from "../services/elevenlabs-audio.js";
+import { env } from "../config/env.js";
+import type { BenchmarkEntry } from "../services/tts/index.js";
 
 export type BenchmarkPayload = {
   totalDurationSeconds: number;

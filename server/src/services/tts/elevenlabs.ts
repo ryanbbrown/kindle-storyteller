@@ -12,13 +12,13 @@ import {
   computeProportionalEndPosition,
   buildBenchmarkTimeline,
   recordChunkAudioArtifacts,
-} from "./audio-utils.js";
+} from "./utils.js";
 import type {
   BenchmarkEntry,
   ChunkAudioSummary,
   GenerateChunkAudioOptions,
-} from "../types/audio.js";
-import { getElevenLabsAudioConfig } from "../config/elevenlabs.js";
+} from "../../types/audio.js";
+import { getElevenLabsAudioConfig } from "../../config/elevenlabs.js";
 
 export { recordChunkAudioArtifacts };
 export type { BenchmarkEntry, ChunkAudioSummary, GenerateChunkAudioOptions };

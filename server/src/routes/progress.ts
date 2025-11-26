@@ -4,7 +4,7 @@ import type { FastifyInstance } from "fastify";
 
 import type { SessionStore } from "../session-store.js";
 import { requireSession } from "../utils/auth.js";
-import { tryParseJson } from "../lib/json.js";
+import { tryParseJson } from "../utils/json.js";
 
 type ProgressParams = {
   asin: string;

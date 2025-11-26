@@ -7,7 +7,7 @@ const currentDir = path.dirname(fileURLToPath(import.meta.url));
 
 loadEnv();
 loadEnv({
-  path: path.resolve(currentDir, "../../kindle-api/.env"),
+  path: path.resolve(currentDir, "../../../kindle-api/.env"),
   override: false,
 });
 
@@ -25,7 +25,7 @@ export const env = {
   logLevel: (process.env.LOG_LEVEL as "fatal" | "error" | "warn" | "info" | "debug" | "trace") ?? "info",
   storageDir:
     process.env.CONTENT_STORAGE_DIR ??
-    path.resolve(currentDir, "../data/books"),
+    path.resolve(currentDir, "../../data/books"),
   ttsProvider: (process.env.TTS_PROVIDER as "elevenlabs" | "cartesia") ?? "elevenlabs",
 };
 
