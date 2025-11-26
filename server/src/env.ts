@@ -26,6 +26,7 @@ export const env = {
   storageDir:
     process.env.CONTENT_STORAGE_DIR ??
     path.resolve(currentDir, "../data/books"),
+  ttsProvider: (process.env.TTS_PROVIDER as "elevenlabs" | "cartesia") ?? "elevenlabs",
 };
 
 export type Env = typeof env;

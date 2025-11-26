@@ -18,10 +18,11 @@ import {
 } from "./download.js";
 import { runChunkOcr, type RunChunkOcrResult } from "./ocr.js";
 import {
-  generateChunkPreviewAudio,
+  generateChunkPreviewAudio as generateElevenLabsAudio,
   recordChunkAudioArtifacts,
   type ChunkAudioSummary,
 } from "./elevenlabs-audio.js";
+import { generateChunkPreviewAudio as generateCartesiaAudio } from "./cartesia-audio.js";
 import { env } from "../env.js";
 import { readChunkMetadata } from "./chunk-metadata-service.js";
 import { openBenchmarkPayload } from "../lib/benchmarks.js";
@@ -29,6 +30,10 @@ import type {
   CoverageRange,
   RendererCoverageMetadata,
 } from "../types/chunk-metadata.js";
+
+/** Generates audio using the configured TTS provider. */
+const generateChunkPreviewAudio =
+  env.ttsProvider === "cartesia" ? generateCartesiaAudio : generateElevenLabsAudio;
 
 type PipelineStep = "download" | "ocr" | "audio";
 

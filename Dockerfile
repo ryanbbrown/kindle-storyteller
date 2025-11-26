@@ -36,6 +36,7 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends \
       bash \
       build-essential \
+      ffmpeg \
       fonts-dejavu-core \
       git \
       libgdk-pixbuf-2.0-0 \

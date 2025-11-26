@@ -43,7 +43,7 @@ def parse_args() -> argparse.Namespace:
 
 def run_ocr(png_path: Path, api_key: str) -> str | None:
     """Run OCR using OCR.space API."""
-    payload = {"isOverlayRequired": False, "apikey": api_key, "language": "eng"}
+    payload = {"isOverlayRequired": False, "apikey": api_key, "language": "eng", "OCREngine": "2"}
     with open(png_path, "rb") as f:
         response = requests.post(
             "https://api.ocr.space/parse/image",
@@ -157,7 +157,7 @@ def main() -> None:
     if combined_text:
         combined_path = output_dir / "full-content.txt"
         output_dir.mkdir(parents=True, exist_ok=True)
-        combined_path.write_text("\n\n".join(combined_text), encoding="utf-8")
+        combined_path.write_text("\n\n".join(combined_text).strip(), encoding="utf-8")
 
     summary = {
         "chunk_id": chunk_id,

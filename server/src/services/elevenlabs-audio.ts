@@ -16,43 +16,18 @@ import {
   readChunkMetadata,
   writeChunkMetadata,
 } from "./chunk-metadata-service.js";
+import type { RendererCoverageMetadata } from "../types/chunk-metadata.js";
 import type {
-  CoverageRange,
-  RendererCoverageMetadata,
-} from "../types/chunk-metadata.js";
+  BenchmarkEntry,
+  ChunkAudioSummary,
+  GenerateChunkAudioOptions,
+} from "../types/audio.js";
 import { getElevenLabsAudioConfig } from "../config/elevenlabs.js";
+
+export type { BenchmarkEntry, ChunkAudioSummary, GenerateChunkAudioOptions };
 
 // Reuse a single SDK client so we do not re-auth on every request.
 let cachedElevenLabsClient: ElevenLabsClient | undefined;
-
-export type BenchmarkEntry = {
-  timeSeconds: number;
-  charIndexStart: number;
-  charIndexEnd: number;
-  kindlePositionIdStart: number;
-  kindlePositionIdEnd: number;
-  textNormalized: string;
-  textOriginal: string;
-};
-
-export type ChunkAudioSummary = {
-  asin: string;
-  chunkId: string;
-  audioPath: string;
-  alignmentPath: string;
-  benchmarksPath: string;
-  textLength: number;
-  totalDurationSeconds: number;
-  benchmarkIntervalSeconds: number;
-};
-
-export type GenerateChunkAudioOptions = {
-  asin: string;
-  chunkId: string;
-  chunkDir: string;
-  range: CoverageRange;
-  combinedTextPath: string;
-};
 
 /** Generates preview audio plus metadata for a single chunk of Kindle text. */
 export async function generateChunkPreviewAudio(
@@ -273,12 +248,7 @@ function computeSentenceSliceLength(
     if (char === "." || char === "!" || char === "?") {
       sentences += 1;
       if (sentences >= targetSentences) {
-        let end = index + 1;
-        // Finish the sentence but skip trailing whitespace.
-        while (end < cap && /\s/.test(text[end])) {
-          end += 1;
-        }
-        return Math.min(Math.max(end, 1), cap);
+        return index + 1;
       }
     }
   }
@@ -328,10 +298,8 @@ function buildBenchmarkTimeline(
     times.push(Number(t.toFixed(3)));
   }
 
-  if (times[times.length - 1] !== totalDurationSeconds) {
-    times.push(Number(totalDurationSeconds.toFixed(3)));
-  }
-
+  // Don't add totalDurationSeconds as a separate entry - the last interval
+  // will be extended to cover the full duration in buildBenchmarks
   return times;
 }
 
