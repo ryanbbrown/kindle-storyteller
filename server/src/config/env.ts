@@ -6,10 +6,6 @@ import { config as loadEnv } from "dotenv";
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 
 loadEnv();
-loadEnv({
-  path: path.resolve(currentDir, "../../../kindle-api/.env"),
-  override: false,
-});
 
 const hourInMs = 60 * 60 * 1000;
 
