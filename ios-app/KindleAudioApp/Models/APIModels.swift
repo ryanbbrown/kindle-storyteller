@@ -18,30 +18,11 @@ struct SessionResponse: Decodable {
 
 // MARK: - Books
 
-struct BooksResponse: Decodable {
-    let books: [Book]
-}
-
-struct Book: Decodable, Identifiable, Equatable {
-    let asin: String
-    let title: String
-
-    var id: String { asin }
-}
-
 struct BookDetailsResponse: Decodable, Equatable {
     let title: String
     let coverImage: String
     let currentPosition: Int
     let length: Int
-}
-
-// MARK: - Text
-
-struct TextResponse: Decodable, Equatable {
-    let text: String
-    let bytesRead: Int
-    let hasMore: Bool
 }
 
 // MARK: - Pipeline

@@ -19,14 +19,6 @@ struct APIClient {
         )
     }
 
-    func fetchBooks(sessionId: String) async throws -> BooksResponse {
-        return try await send(
-            path: "books",
-            method: "GET",
-            headers: ["Authorization": "Bearer \(sessionId)"]
-        )
-    }
-
     func fetchFullDetails(sessionId: String, asin: String) async throws -> BookDetailsResponse {
         let encodedASIN = asin.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? asin
         return try await send(
@@ -96,20 +88,6 @@ struct APIClient {
 
         try fileManager.moveItem(at: tempURL, to: destination)
         return destination
-    }
-
-    func fetchText(sessionId: String, asin: String, start: Int, length: Int, chunkId: String?) async throws -> TextResponse {
-        let encodedASIN = asin.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? asin
-        var path = "books/\(encodedASIN)/text?start=\(start)&length=\(length)"
-        if let chunkId,
-           let encodedChunk = chunkId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
-            path += "&chunkId=\(encodedChunk)"
-        }
-        return try await send(
-            path: path,
-            method: "GET",
-            headers: ["Authorization": "Bearer \(sessionId)"]
-        )
     }
 
     func updateProgress(sessionId: String, asin: String, position: Int) async throws -> UpdateProgressResponse {

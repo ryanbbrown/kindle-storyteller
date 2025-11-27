@@ -9,7 +9,6 @@ import { registerSessionRoutes } from "./routes/session.js";
 import { registerBooksRoutes } from "./routes/books.js";
 import { registerProgressRoutes } from "./routes/progress.js";
 import { registerPipelineRoutes } from "./routes/pipeline.js";
-import { registerTextRoutes } from "./routes/text.js";
 import { registerChunkAudioRoutes } from "./routes/chunk-audio.js";
 import { registerBenchmarkRoutes } from "./routes/benchmarks.js";
 
@@ -35,7 +34,6 @@ export async function buildApp() {
   await registerPipelineRoutes(app, store);
   await registerChunkAudioRoutes(app, store);
   await registerBenchmarkRoutes(app, store);
-  await registerTextRoutes(app, store);
 
   const timer = setInterval(() => {
     const removed = store.gc();

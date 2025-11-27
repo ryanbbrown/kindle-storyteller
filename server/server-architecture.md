@@ -12,11 +12,10 @@ server/
 │   ├── session-store.ts      # In-memory Kindle session management
 │   ├── routes/
 │   │   ├── session.ts        # POST /session - authenticate with Kindle
-│   │   ├── books.ts          # GET /books, GET /books/:asin/full-details
+│   │   ├── books.ts          # GET /books/:asin/full-details
 │   │   ├── pipeline.ts       # POST /books/:asin/pipeline - run audiobook generation
 │   │   ├── chunk-audio.ts    # GET /books/:asin/chunks/:chunkId/audio
 │   │   ├── progress.ts       # POST /books/:asin/progress - sync reading position
-│   │   ├── text.ts           # Text content endpoints
 │   │   └── benchmarks.ts     # Audio benchmark data endpoints
 │   ├── services/
 │   │   ├── chunk-pipeline.ts # Orchestrates download → OCR → TTS stages
@@ -40,7 +39,7 @@ server/
 │       ├── json.ts           # Safe JSON parsing
 │       ├── serializers.ts    # Book/details serialization
 │       └── benchmarks.ts     # Benchmark file loading
-└── data/books/               # Generated content storage (gitignored)
+└── data/books/               # Generated content storage
 ```
 
 ## Core Flow
@@ -94,11 +93,11 @@ The pipeline checks for existing artifacts and skips completed stages.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/session` | Create authenticated Kindle session |
-| GET | `/books` | List user's Kindle library |
+| POST | `/session` | Create authenticated Kindle session (returns books list) |
 | GET | `/books/:asin/full-details` | Get book metadata and cover |
 | POST | `/books/:asin/pipeline` | Generate audiobook chunk |
 | GET | `/books/:asin/chunks/:chunkId/audio` | Stream audio file |
+| GET | `/books/:asin/chunks/:chunkId/benchmarks` | Get audio timestamp-to-position mapping |
 | POST | `/books/:asin/progress` | Sync reading position to Kindle |
 
 ## Environment Variables
