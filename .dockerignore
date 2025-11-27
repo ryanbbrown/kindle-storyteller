@@ -3,8 +3,7 @@ ios-app/DerivedData
 server/node_modules
 server/dist
 server/data
-kindle-api/node_modules
 tls-client-api/dist
-glyph-extraction/.venv
+text-extraction/.venv
 **/__pycache__
 *.log

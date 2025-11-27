@@ -7,9 +7,8 @@
 ## Components
 
 - `ios-app`: SwiftUI client that captures Kindle session info and drives the pipeline.
-- `server`: Fastify backend orchestrating Kindle fetches and the OCR/glyph workflow.
-- `kindle-api`: TypeScript Kindle client, wrapped by the server for upstream requests.
-- `glyph-extraction`: Python utilities for renderer glyph extraction and OCR stitching.
+- `server`: Fastify backend orchestrating Kindle fetches and text extraction. Uses [`kindle-api`](https://github.com/ryanbbrown/kindle-api) for Kindle interactions.
+- `text-extraction`: Python pipeline for extracting text from Kindle renderer output.
 - `tls-client-api`: Prebuilt TLS proxy binary used by the backend for Amazon requests ([repo link](https://github.com/bogdanfinn/tls-client-api)).
 
 ## Setup
@@ -59,7 +58,7 @@ There are three ways to test the app (iPhone simulator on Mac, iPhone on local n
 
 ### Deploying to Fly.io
 
-The repository includes a multi-stage `Dockerfile`, process supervisor (`start.sh`), and `fly.toml` to run the Fastify backend, TLS proxy, and glyph-extraction worker in a single Fly machine.
+The repository includes a multi-stage `Dockerfile`, process supervisor (`start.sh`), and `fly.toml` to run the Fastify backend, TLS proxy, and text-extraction pipeline in a single Fly machine.
 
 1. **Create the Fly app**
    ```bash

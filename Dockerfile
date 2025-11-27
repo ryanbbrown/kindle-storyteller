@@ -54,7 +54,7 @@ RUN set -eux; \
       zlib1g; \
     rm -rf /var/lib/apt/lists/*
 
-# Install uv (Python package manager) globally for the glyph-extraction pipeline.
+# Install uv (Python package manager) globally for the text-extraction pipeline.
 ENV UV_LINK_MODE=copy
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
   && ln -s /root/.local/bin/uv /usr/local/bin/uv
@@ -63,8 +63,8 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
 RUN curl -L "https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64" -o /usr/local/bin/yq \
   && chmod +x /usr/local/bin/yq
 
-COPY glyph-extraction ./glyph-extraction
-RUN cd glyph-extraction && uv sync --frozen --no-dev
+COPY text-extraction ./text-extraction
+RUN cd text-extraction && uv sync --frozen --no-dev
 
 # Copy the prebuilt Fastify server output into the runtime and ensure data dir exists.
 COPY server ./server
@@ -89,7 +89,7 @@ ENV HOST=0.0.0.0 \
     TLS_PROXY_PORT=8080 \
     TLS_PROXY_HEALTH_PORT=8081 \
     UV_PROJECT_ENVIRONMENT=.venv \
-    GLYPH_EXTRACTION_DIR=/app/glyph-extraction
+    TEXT_EXTRACTION_DIR=/app/text-extraction
 
 EXPOSE 3000
 

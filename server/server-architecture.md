@@ -2,6 +2,10 @@
 
 The server is a Fastify API that bridges authenticated Kindle sessions with AI-powered audiobook generation. It handles Kindle content rendering, OCR text extraction, and text-to-speech synthesis.
 
+## Dependencies
+
+The server uses [`kindle-api`](https://github.com/ryanbbrown/kindle-api) (installed from GitHub) to handle all Kindle API interactions including authentication, library fetching, content rendering, and reading progress sync. This abstracts away the low-level HTTP requests and token management.
+
 ## File Structure
 
 ```
@@ -19,8 +23,8 @@ server/
 │   │   └── benchmarks.ts     # Audio benchmark data endpoints
 │   ├── services/
 │   │   ├── chunk-pipeline.ts # Orchestrates download → OCR → TTS stages
-│   │   ├── download.ts       # Downloads content from Kindle renderer
-│   │   ├── ocr.ts            # Runs glyph-extraction Python pipeline
+│   │   ├── download.ts       # Downloads content via kindle-api renderChunk
+│   │   ├── ocr.ts            # Runs text-extraction Python pipeline
 │   │   ├── chunk-metadata-service.ts  # Reads/writes chunk metadata JSON
 │   │   └── tts/
 │   │       ├── index.ts      # TTS barrel export
@@ -36,7 +40,6 @@ server/
 │   │   └── chunk-metadata.ts # Chunk coverage range types
 │   └── utils/
 │       ├── auth.ts           # Session validation helper
-│       ├── json.ts           # Safe JSON parsing
 │       ├── serializers.ts    # Book/details serialization
 │       └── benchmarks.ts     # Benchmark file loading
 └── data/books/               # Generated content storage
@@ -48,6 +51,7 @@ server/
 
 Sessions are created via `POST /session` with Kindle credentials:
 - Cookies, device token, rendering token, renderer revision, and GUID
+- Credentials are passed to `Kindle.fromConfig()` which handles authentication
 - Returns a session ID used in subsequent requests via `X-Session-Id` header
 - Sessions expire after 4 hours (configurable via `SESSION_TTL_MS`)
 - Automatic garbage collection removes expired sessions
@@ -61,12 +65,12 @@ Download → OCR → TTS
 ```
 
 **Download** (`services/download.ts`):
-- Fetches rendered book pages from `read.amazon.com/renderer/render`
+- Calls `kindle.renderChunk()` to fetch rendered book pages
 - Extracts the TAR response containing page images and position data
 - Writes chunk metadata with position ID ranges
 
 **OCR** (`services/ocr.ts`):
-- Invokes the `glyph-extraction` Python pipeline via `uv run python pipeline.py`
+- Invokes the `text-extraction` Python pipeline via `uv run python pipeline.py`
 - Extracts text from rendered page images
 - Outputs combined text file for TTS processing
 

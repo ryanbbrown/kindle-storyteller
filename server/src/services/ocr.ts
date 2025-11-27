@@ -21,7 +21,7 @@ const execFileAsync = promisify(execFile);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "../../..");
-const glyphExtractionDir = path.join(projectRoot, "glyph-extraction");
+const textExtractionDir = process.env.TEXT_EXTRACTION_DIR ?? path.join(projectRoot, "text-extraction");
 
 type PipelineSummary = {
   total_pages: number;
@@ -51,7 +51,7 @@ export type RunChunkOcrResult = {
   ocrEnabled: boolean;
 };
 
-/** Runs the glyph extraction OCR pipeline for a chunk and stores summary data. */
+/** Runs the text extraction pipeline for a chunk and stores summary data. */
 export async function runChunkOcr(
   options: RunChunkOcrOptions
 ): Promise<RunChunkOcrResult> {
@@ -132,14 +132,14 @@ async function executeOcrPipeline(options: {
   return result;
 }
 
-/** Executes the glyph extraction pipeline with uv and returns its summary payload. */
+/** Executes the text extraction pipeline with uv and returns its summary payload. */
 async function runOcrCommand(args: string[]): Promise<PipelineSummary> {
   try {
     const { stdout } = await execFileAsync(
       "uv",
       ["run", "python", "pipeline.py", ...args],
       {
-        cwd: glyphExtractionDir,
+        cwd: textExtractionDir,
         env: process.env,
         encoding: "utf8",
       } as const,
