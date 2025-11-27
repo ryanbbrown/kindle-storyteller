@@ -4,29 +4,21 @@ import {
   Kindle,
   type KindleBook,
   type KindleConfiguration,
-  type KindleRequiredCookies,
 } from "kindle-api";
 
 export type SessionContext = {
   id: string;
   kindle: Kindle;
-  renderingToken: string;
-  rendererRevision: string;
-  guid: string;
   createdAt: number;
   lastAccessedAt: number;
   booksCache: KindleBook[];
   cache: Map<string, any>;
 };
 
-export type CreateSessionInput = {
-  cookies: string | KindleRequiredCookies;
-  deviceToken: string;
-  renderingToken: string;
-  rendererRevision: string;
-  guid: string;
-  tlsServer: KindleConfiguration["tlsServer"];
-};
+export type CreateSessionInput = Pick<
+  KindleConfiguration,
+  "cookies" | "deviceToken" | "renderingToken" | "rendererRevision" | "guid" | "tlsServer"
+>;
 
 export class SessionStore {
   private readonly sessions = new Map<string, SessionContext>();
@@ -39,6 +31,9 @@ export class SessionStore {
       cookies: input.cookies,
       deviceToken: input.deviceToken,
       tlsServer: input.tlsServer,
+      guid: input.guid,
+      renderingToken: input.renderingToken,
+      rendererRevision: input.rendererRevision,
     });
 
     const sessionId = randomUUID();
@@ -46,9 +41,6 @@ export class SessionStore {
     const context: SessionContext = {
       id: sessionId,
       kindle,
-      renderingToken: input.renderingToken,
-      rendererRevision: input.rendererRevision,
-      guid: input.guid,
       createdAt: now,
       lastAccessedAt: now,
       booksCache: [...kindle.defaultBooks],

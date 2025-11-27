@@ -118,7 +118,7 @@ final class ProgressUpdateScheduler: NSObject {
             )
 
             guard response.success else {
-                throw SchedulerError.upstream(response.upstreamStatus)
+                throw SchedulerError.upstream(response.status)
             }
 
             onStatusChange?(nil)

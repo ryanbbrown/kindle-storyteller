@@ -1,10 +1,7 @@
-import { randomUUID } from "node:crypto";
-
 import type { FastifyInstance } from "fastify";
 
 import type { SessionStore } from "../session-store.js";
 import { requireSession } from "../utils/auth.js";
-import { tryParseJson } from "../utils/json.js";
 
 type ProgressParams = {
   asin: string;
@@ -16,8 +13,7 @@ type ProgressBody = {
 
 type ProgressResponse = {
   success: boolean;
-  upstreamStatus: number;
-  payload: unknown;
+  status: number;
 };
 
 export async function registerProgressRoutes(
@@ -38,77 +34,29 @@ export async function registerProgressRoutes(
     if (!asin) {
       return reply.status(400).send({
         success: false,
-        upstreamStatus: 400,
-        payload: { message: "asin is required" },
-      });
+        status: 400,
+      } as any);
     }
 
     const positionValue = request.body?.position;
     if (positionValue === undefined || positionValue === null || positionValue === "") {
       return reply.status(400).send({
         success: false,
-        upstreamStatus: 400,
-        payload: { message: "position is required" },
-      });
+        status: 400,
+      } as any);
     }
 
     const position = String(positionValue);
-    const adpSessionToken = session.kindle.client.getAdpSessionId();
 
-    if (!adpSessionToken) {
-      request.log.error("Missing ADP session token");
+    try {
+      const result = await session.kindle.stillReading({ asin, position });
+      return reply.status(result.success ? 200 : 502).send(result);
+    } catch (error) {
+      request.log.error({ err: error }, "stillReading failed");
       return reply.status(500).send({
         success: false,
-        upstreamStatus: 500,
-        payload: { message: "ADP session token unavailable; reauthenticate" },
+        status: 500,
       });
     }
-
-    const kindleSessionId = randomUUID();
-    const timezoneOffset = new Date().getTimezoneOffset();
-    const stillReadingUrl = buildStillReadingUrl(
-      asin,
-      session.guid,
-      position,
-      kindleSessionId,
-      timezoneOffset
-    );
-
-    const response = await session.kindle.request(stillReadingUrl, {
-      headers: {
-        "x-adp-session-token": adpSessionToken,
-        referer: `https://read.amazon.com/?asin=${asin}`,
-      },
-    });
-
-    const parsed = tryParseJson(response.body);
-    const payload = parsed ?? response.body ?? null;
-    const success = response.status >= 200 && response.status < 300;
-
-    return reply.status(success ? 200 : 502).send({
-      success,
-      upstreamStatus: response.status,
-      payload,
-    });
   });
-}
-
-function buildStillReadingUrl(
-  asin: string,
-  guid: string,
-  position: string,
-  kindleSessionId: string,
-  timezoneOffset: number
-): string {
-  const base = "https://read.amazon.com/service/mobile/reader/stillReading";
-  const params =
-    `?asin=${encodeURIComponent(asin)}` +
-    `&guid=${guid}` +
-    `&kindleSessionId=${encodeURIComponent(kindleSessionId)}` +
-    `&lastPageRead=${encodeURIComponent(position)}` +
-    `&positionType=YJBinary` +
-    `&localTimeOffset=${encodeURIComponent(String(-timezoneOffset))}` +
-    `&clientVersion=20000100`;
-
-  return `${base}${params}`;
 }

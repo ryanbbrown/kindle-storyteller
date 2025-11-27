@@ -8,12 +8,11 @@ RUN go mod download
 COPY tls-client-api .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/tls-client ./cmd/tls-client-api/main.go
 
-# Compile the Fastify server (including the local kindle-api workspace) and prune dev deps.
+# Compile the Fastify server and prune dev deps.
 FROM node:20-bookworm AS server-builder
 WORKDIR /workspace
 COPY server ./server
 RUN rm -rf ./server/node_modules ./server/dist
-COPY kindle-api ./kindle-api
 WORKDIR /workspace/server
 RUN corepack enable pnpm \
   && pnpm install --frozen-lockfile \

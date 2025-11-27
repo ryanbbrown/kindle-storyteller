@@ -45,9 +45,7 @@ export async function registerBooksRoutes(
         } as any);
       }
 
-      // Fetch light details first, then full details
-      const lightDetails = await book.details();
-      const fullDetails = await book.fullDetails(lightDetails);
+      const fullDetails = await session.kindle.fullBookDetails(book);
 
       // Serialize and return the response
       const response = serializeBookDetails(fullDetails);

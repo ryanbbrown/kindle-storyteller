@@ -36,8 +36,6 @@ type PipelineStep = "download" | "ocr" | "audio";
 export type RunChunkPipelineOptions = {
   asin: string;
   kindle: Kindle;
-  renderingToken: string;
-  rendererRevision: string;
   startingPosition: number | string;
   audioProvider: "cartesia" | "elevenlabs";
 };
@@ -77,8 +75,6 @@ export async function runChunkPipeline(
     const downloadResult = await ensureChunkDownloaded({
       asin: options.asin,
       kindle: options.kindle,
-      renderingToken: options.renderingToken,
-      rendererRevision: options.rendererRevision,
       renderOptions: {
         startingPosition: options.startingPosition,
         numPages: DEFAULT_RENDER_NUM_PAGES,

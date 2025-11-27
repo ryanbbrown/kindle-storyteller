@@ -1,5 +1,4 @@
 import type { FastifyInstance } from "fastify";
-import type { KindleRequiredCookies } from "kindle-api";
 
 import { env } from "../config/env.js";
 import type { SessionStore } from "../session-store.js";
@@ -7,7 +6,6 @@ import { serializeBooks } from "../utils/serializers.js";
 
 type SessionRequestBody = {
   cookieString?: string;
-  cookies?: Partial<Record<string, string>>;
   deviceToken?: string;
   renderingToken?: string;
   rendererRevision?: string;
@@ -31,56 +29,17 @@ export async function registerSessionRoutes(
     "/session",
     async (request, reply) => {
       const body = request.body ?? {};
-      const cookies = resolveCookies(body);
-      const deviceToken = body.deviceToken;
-      const renderingToken = body.renderingToken;
-      const rendererRevision = body.rendererRevision;
-      const guid = body.guid;
-      const tlsServerUrl = body.tlsServerUrl ?? env.tlsServerUrl;
-      const tlsApiKey = body.tlsApiKey ?? env.tlsServerApiKey;
-
-      if (!cookies) {
-        return reply
-          .status(400)
-          .send({ message: "Cookies or cookieString is required" } as never);
-      }
-      if (!deviceToken) {
-        return reply
-          .status(400)
-          .send({ message: "deviceToken is required" } as never);
-      }
-      if (!renderingToken) {
-        return reply
-          .status(400)
-          .send({ message: "renderingToken is required" } as never);
-      }
-      if (!rendererRevision) {
-        return reply
-          .status(400)
-          .send({ message: "rendererRevision is required" } as never);
-      }
-      if (!guid) {
-        return reply.status(400).send({ message: "guid is required" } as never);
-      }
 
       try {
-        request.log.info(
-          {
-            renderingTokenProvided: typeof body.renderingToken === "string",
-            renderingTokenPreview: renderingToken?.slice(0, 12),
-          },
-          "Creating Kindle session"
-        );
-        request.log.info({ guid }, "Received session GUID");
         const session = await store.createSession({
-          cookies,
-          deviceToken,
-          renderingToken,
-          rendererRevision,
-          guid,
+          cookies: body.cookieString ?? "",
+          deviceToken: body.deviceToken ?? "",
+          renderingToken: body.renderingToken,
+          rendererRevision: body.rendererRevision,
+          guid: body.guid,
           tlsServer: {
-            url: tlsServerUrl,
-            apiKey: tlsApiKey,
+            url: body.tlsServerUrl ?? env.tlsServerUrl,
+            apiKey: body.tlsApiKey ?? env.tlsServerApiKey,
           },
         });
 
@@ -97,30 +56,4 @@ export async function registerSessionRoutes(
       }
     }
   );
-}
-
-/** Resolves Kindle cookies from the session request body or defaults. */
-function resolveCookies(
-  body: SessionRequestBody
-): string | KindleRequiredCookies | undefined {
-  if (body.cookieString && body.cookieString.trim().length > 0) {
-    return body.cookieString.trim();
-  }
-
-  const candidate = body.cookies ?? {};
-  const ubidMain = candidate.ubidMain ?? candidate["ubid-main"];
-  const atMain = candidate.atMain ?? candidate["at-main"];
-  const sessionId = candidate.sessionId ?? candidate["session-id"];
-  const xMain = candidate.xMain ?? candidate["x-main"];
-
-  if (ubidMain && atMain && sessionId && xMain) {
-    return {
-      ubidMain,
-      atMain,
-      sessionId,
-      xMain,
-    };
-  }
-
-  return undefined;
 }

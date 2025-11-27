@@ -58,10 +58,8 @@ export async function registerPipelineRoutes(
     const options: RunChunkPipelineOptions = {
       asin,
       kindle: session.kindle,
-      renderingToken: session.renderingToken,
-      rendererRevision: session.rendererRevision,
       startingPosition,
-      audioProvider: request.body?.audioProvider,
+      audioProvider,
     };
 
     try {

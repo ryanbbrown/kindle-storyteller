@@ -1,11 +1,7 @@
 /**
  * - ensureChunkDownloaded: exported entry that prepares renderer inputs then calls downloadFreshChunk and resolveArtifacts to return artifacts.
  * - downloadFreshChunk: performs the renderer HTTP request, writes artifacts/metadata, and relies on helpers:
- *   - normalizeRenderOptions: coerces provided render options into renderer-friendly strings.
- *   - buildRendererUrl: builds the Kindle renderer URL with query parameters derived from the normalized config.
- *   - readJsonSafe: loads JSON files from the extracted tar, tolerating missing files.
  *   - findPageDataFile: locates the canonical page_data JSON within extracted renderer output.
- *   - coerceBodyToBuffer: converts varying HTTP body encodings into a Buffer for tar extraction.
  *   - buildChunkId: builds deterministic chunk ids from normalized start/end positions.
  * - resolveArtifacts: merges metadata-provided artifact paths with default chunk directory fallbacks.
  */
@@ -14,7 +10,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import type { Kindle, TLSClientRequestPayload } from "kindle-api";
+import type { Kindle } from "kindle-api";
 
 import { env } from "../config/env.js";
 import { writeChunkMetadata } from "./chunk-metadata-service.js";
@@ -33,17 +29,9 @@ export type RendererConfigInput = {
   skipPages?: number | string;
 };
 
-export type RendererConfig = {
-  startingPosition: string;
-  numPage: string;
-  skipPageCount: string;
-};
-
 export type EnsureChunkDownloadedOptions = {
   asin: string;
   kindle: Kindle;
-  renderingToken: string;
-  rendererRevision: string;
   renderOptions: RendererConfigInput;
 };
 
@@ -70,8 +58,7 @@ export type EnsureChunkDownloadedResult = {
 export async function ensureChunkDownloaded(
   options: EnsureChunkDownloadedOptions
 ): Promise<EnsureChunkDownloadedResult> {
-  const { asin, kindle, renderingToken, rendererRevision } = options;
-  const rendererConfig = normalizeRenderOptions(options.renderOptions);
+  const { asin, kindle, renderOptions } = options;
 
   const asinDir = path.join(env.storageDir, asin);
   const chunksRoot = path.join(asinDir, "chunks");
@@ -80,9 +67,7 @@ export async function ensureChunkDownloaded(
   return await downloadFreshChunk({
     asin,
     kindle,
-    renderingToken,
-    rendererRevision,
-    rendererConfig,
+    renderOptions,
     chunksRoot,
   });
 }
@@ -91,19 +76,10 @@ export async function ensureChunkDownloaded(
 async function downloadFreshChunk(options: {
   asin: string;
   kindle: Kindle;
-  renderingToken: string;
-  rendererRevision: string;
-  rendererConfig: RendererConfig;
+  renderOptions: RendererConfigInput;
   chunksRoot: string;
 }): Promise<EnsureChunkDownloadedResult> {
-  const {
-    asin,
-    kindle,
-    renderingToken,
-    rendererRevision,
-    rendererConfig,
-    chunksRoot,
-  } = options;
+  const { asin, kindle, renderOptions, chunksRoot } = options;
 
   const asinDir = path.dirname(chunksRoot);
   const tempRoot = path.join(asinDir, "tmp");
@@ -114,26 +90,12 @@ async function downloadFreshChunk(options: {
   const stagingExtractDir = path.join(stagingDir, "extracted");
   await fs.mkdir(stagingExtractDir, { recursive: true });
 
-  const requestOptions: Partial<TLSClientRequestPayload> = {
-    headers: {
-      "x-amz-rendering-token": renderingToken,
-    },
-    isByteResponse: true,
-  };
-
-  const response = await kindle.request(
-    buildRendererUrl(asin, rendererConfig, rendererRevision),
-    requestOptions,
-  );
-
-  if (response.status !== 200) {
-    const bodySample = String(response.body).slice(0, 500);
-    throw new Error(
-      `Renderer request failed: status=${response.status} body=${bodySample}`
-    );
-  }
-
-  const buffer = coerceBodyToBuffer(response.body);
+  const buffer = await kindle.renderChunk({
+    asin,
+    startingPosition: renderOptions.startingPosition,
+    numPages: renderOptions.numPages,
+    skipPages: renderOptions.skipPages,
+  });
 
   await fs.writeFile(stagingTar, buffer);
 
@@ -207,63 +169,6 @@ async function downloadFreshChunk(options: {
   }
 }
 
-/** Converts renderer options into the exact string fields the renderer expects. */
-function normalizeRenderOptions(input: RendererConfigInput): RendererConfig {
-  return {
-    startingPosition: String(input.startingPosition),
-    numPage: input.numPages !== undefined ? String(input.numPages) : "5",
-    skipPageCount: input.skipPages !== undefined ? String(input.skipPages) : "0",
-  };
-}
-
-/** Builds the Kindle renderer URL for the requested ASIN and config. */
-function buildRendererUrl(
-  asin: string,
-  config: RendererConfig,
-  rendererRevision: string
-): string {
-  const params = new URLSearchParams({
-    version: "3.0",
-    asin,
-    contentType: "FullBook",
-    revision: rendererRevision,
-    fontFamily: "Bookerly",
-    fontSize: "8.91",
-    lineHeight: "1.4",
-    dpi: "160",
-    height: "784",
-    width: "886",
-    marginBottom: "0",
-    marginLeft: "9",
-    marginRight: "9",
-    marginTop: "0",
-    maxNumberColumns: "2",
-    theme: "dark",
-    locationMap: "false",
-    packageType: "TAR",
-    encryptionVersion: "NONE",
-    numPage: config.numPage,
-    skipPageCount: config.skipPageCount,
-    startingPosition: config.startingPosition,
-    bundleImages: "false",
-  });
-
-  return `https://read.amazon.com/renderer/render?${params.toString()}`;
-}
-
-/** Reads JSON if the file exists, otherwise returns null when missing. */
-async function readJsonSafe(filePath: string): Promise<unknown | null> {
-  try {
-    const content = await fs.readFile(filePath, "utf8");
-    return JSON.parse(content);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return null;
-    }
-    throw error;
-  }
-}
-
 /** Locates the renderer page_data JSON file inside the extraction directory. */
 async function findPageDataFile(extractDir: string): Promise<string> {
   const entries = await fs.readdir(extractDir);
@@ -281,29 +186,6 @@ async function findPageDataFile(extractDir: string): Promise<string> {
   }
 
   throw new Error("page_data JSON not found in renderer output");
-}
-
-/** Converts the renderer body payload into a Buffer regardless of encoding. */
-function coerceBodyToBuffer(body: unknown): Buffer {
-  if (Buffer.isBuffer(body)) {
-    return body;
-  }
-  if (typeof body === "string") {
-    if (body.startsWith("data:")) {
-      const commaIndex = body.indexOf(",");
-      if (commaIndex === -1) {
-        throw new Error("Malformed data URI renderer response");
-      }
-      const base64Payload = body.slice(commaIndex + 1);
-      return Buffer.from(base64Payload, "base64");
-    }
-    const sample = body.slice(0, 100);
-    if (/^[A-Za-z0-9+/]+=*$/.test(sample)) {
-      return Buffer.from(body, "base64");
-    }
-    return Buffer.from(body, "binary");
-  }
-  throw new Error("Unexpected renderer response body type");
 }
 
 /** Builds a deterministic chunk id from renderer start/end metadata ranges. */

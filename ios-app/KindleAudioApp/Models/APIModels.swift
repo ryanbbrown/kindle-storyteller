@@ -78,7 +78,7 @@ struct UpdateProgressRequest: Encodable {
 
 struct UpdateProgressResponse: Decodable, Equatable {
     let success: Bool
-    let upstreamStatus: Int
+    let status: Int
 }
 
 // MARK: - Utility

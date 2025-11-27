@@ -21,8 +21,8 @@ importers:
         specifier: ^4.26.2
         version: 4.29.1
       kindle-api:
-        specifier: file:../kindle-api
-        version: file:../kindle-api
+        specifier: github:ryanbbrown/kindle-api
+        version: https://codeload.github.com/ryanbbrown/kindle-api/tar.gz/daa8289692ebc6ce550b0691df3d29c6164574b4
       uuid:
         specifier: ^9.0.1
         version: 9.0.1
@@ -321,8 +321,9 @@ packages:
   json-schema-traverse@1.0.0:
     resolution: {integrity: sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug==}
 
-  kindle-api@file:../kindle-api:
-    resolution: {directory: ../kindle-api, type: directory}
+  kindle-api@https://codeload.github.com/ryanbbrown/kindle-api/tar.gz/daa8289692ebc6ce550b0691df3d29c6164574b4:
+    resolution: {tarball: https://codeload.github.com/ryanbbrown/kindle-api/tar.gz/daa8289692ebc6ce550b0691df3d29c6164574b4}
+    version: 1.4.0
 
   light-my-request@5.14.0:
     resolution: {integrity: sha512-aORPWntbpH5esaYpGOOmri0OHDOe3wC5M2MQxZ9dvMLZm6DnaAn0kJlcbU9hwsQgLzmZyReKwFwwPkR+nHu5kA==}
@@ -709,7 +710,7 @@ snapshots:
 
   json-schema-traverse@1.0.0: {}
 
-  kindle-api@file:../kindle-api: {}
+  kindle-api@https://codeload.github.com/ryanbbrown/kindle-api/tar.gz/daa8289692ebc6ce550b0691df3d29c6164574b4: {}
 
   light-my-request@5.14.0:
     dependencies:
