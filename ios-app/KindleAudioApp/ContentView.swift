@@ -18,10 +18,12 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 24) {
                 headerSection
                 bookMetadataSection
-                pipelineConfigurationSection
+                // DEBUG
+               pipelineConfigurationSection
                 actionButtonsSection
                 audioPreviewSection
-                logSection
+                // DEBUG
+//                logSection
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
@@ -41,40 +43,48 @@ struct ContentView: View {
     // MARK: - Header
 
     private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Kindle AI Audiobook")
+        VStack(spacing: 4) {
+            Text("Kindle Storyteller")
                 .font(.largeTitle.bold())
-
-            Button(action: { isPresentingLogin = true }) {
-                Text("Open Kindle Web Viewer")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Color.accentColor)
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
-            }
+            Text("On-demand AI-generated audiobooks")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
         }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Book Metadata
 
     private var bookMetadataSection: some View {
-        GroupBox("Selected Book") {
+        GroupBox("Book Selection") {
             VStack(spacing: 16) {
+                Image("GenericBook")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 80, height: 80)
+
                 if viewModel.isLoadingBookDetails {
                     ProgressView()
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 20)
                 } else if let details = sessionStore.bookDetails {
                     bookDetailsContent(details)
                 } else {
-                    Text("No book selected yet")
+                    Text("No book currently selected")
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 20)
+                }
+
+                Button(action: { isPresentingLogin = true }) {
+                    Text("Connect Kindle")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.accentColor)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
                 }
             }
+            .padding(.top, 8)
         }
         .onChange(of: sessionStore.asin) { oldValue, newValue in
             if let asin = newValue, !asin.isEmpty, oldValue != newValue {
@@ -90,18 +100,7 @@ struct ContentView: View {
     }
 
     private func bookDetailsContent(_ details: BookDetails) -> some View {
-        VStack(spacing: 12) {
-            AsyncImage(url: URL(string: details.coverImage)) { image in
-                image
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-            } placeholder: {
-                Color.gray.opacity(0.3)
-            }
-            .frame(width: 120, height: 180)
-            .cornerRadius(8)
-            .shadow(radius: 4)
-
+        VStack(spacing: 8) {
             Text(details.title)
                 .font(.headline)
                 .multilineTextAlignment(.center)
@@ -138,16 +137,22 @@ struct ContentView: View {
     // MARK: - Action Buttons
 
     private var actionButtonsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            audioProviderPicker
+        GroupBox("Audiobook Generation") {
+            VStack(spacing: 12) {
+                audioProviderPicker
 
-            Button(viewModel.isGeneratingAudiobook ? "Generating..." : "Generate Audiobook") {
-                Task { await viewModel.generateAudiobook() }
+                Button(action: { Task { await viewModel.generateAudiobook() } }) {
+                    Text(viewModel.isGeneratingAudiobook ? "Generating..." : "Generate")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(viewModel.isGeneratingAudiobook || sessionStore.bookDetails == nil ? Color.gray : Color.accentColor)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
+                }
+                .disabled(viewModel.isGeneratingAudiobook || sessionStore.bookDetails == nil)
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(viewModel.isGeneratingAudiobook || sessionStore.bookDetails == nil)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
+            .padding(.top, 8)
         }
     }
 
@@ -181,9 +186,9 @@ struct ContentView: View {
     // MARK: - Audio Preview
 
     private var audioPreviewSection: some View {
-        VStack(spacing: 16) {
-            if viewModel.isGeneratingAudiobook {
-                GroupBox {
+        GroupBox("Listen") {
+            VStack(spacing: 16) {
+                if viewModel.isGeneratingAudiobook {
                     VStack(spacing: 16) {
                         ProgressView()
                             .scaleEffect(1.5)
@@ -192,28 +197,26 @@ struct ContentView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 30)
-                }
-            } else if viewModel.downloadedAudioURL != nil {
-                AudioPlayerCardView(
-                    coordinator: viewModel.playbackCoordinator,
-                    title: sessionStore.bookDetails?.title ?? "Kindle Audio Preview",
-                    coverImageURL: sessionStore.bookDetails?.coverImage
-                )
+                } else if viewModel.downloadedAudioURL != nil {
+                    AudioPlayerCardView(
+                        coordinator: viewModel.playbackCoordinator,
+                        title: sessionStore.bookDetails?.title ?? "Kindle Audio Preview",
+                        coverImageURL: sessionStore.bookDetails?.coverImage
+                    )
 
-                if let message = viewModel.audioErrorMessage ?? viewModel.playbackCoordinator.audioController.errorMessage {
-                    Text(message)
-                        .font(.caption)
-                        .foregroundColor(.red)
-                }
+                    if let message = viewModel.audioErrorMessage ?? viewModel.playbackCoordinator.audioController.errorMessage {
+                        Text(message)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
 
-                if let progressMessage = viewModel.playbackCoordinator.progressErrorMessage {
-                    Text(progressMessage)
-                        .font(.caption)
-                        .foregroundColor(.orange)
-                }
-            } else {
-                GroupBox {
-                    Text("Tap 'Generate Audiobook' to create audio")
+                    if let progressMessage = viewModel.playbackCoordinator.progressErrorMessage {
+                        Text(progressMessage)
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    }
+                } else {
+                    Text("Tap 'Generate' to create audio")
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 20)

@@ -119,6 +119,13 @@ final class AudioPlaybackController: NSObject, ObservableObject, AVAudioPlayerDe
         updateNowPlayingInfo(playbackRate: isPlaying ? 1 : 0)
     }
 
+    /** Seeks to a specific time position in the audio. */
+    func seekTo(_ time: TimeInterval) {
+        guard let player = player else { return }
+        player.currentTime = max(0, min(time, player.duration))
+        updateNowPlayingInfo(playbackRate: isPlaying ? 1 : 0)
+    }
+
     func reset() {
         player?.stop()
         player = nil
