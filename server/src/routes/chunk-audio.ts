@@ -12,6 +12,7 @@ type ChunkAudioParams = {
   chunkId: string;
 };
 
+/** Registers routes for streaming chunk audio files. */
 export async function registerChunkAudioRoutes(
   app: FastifyInstance,
   store: SessionStore
@@ -33,6 +34,8 @@ export async function registerChunkAudioRoutes(
           .send({ message: "asin and chunkId are required" } as never);
       }
 
+      request.log.debug({ asin, chunkId }, "Streaming chunk audio");
+
       try {
         const { stream, size } = await openAudioStream(asin, chunkId);
         reply.header("Content-Type", "audio/mpeg");
@@ -41,6 +44,7 @@ export async function registerChunkAudioRoutes(
         return reply.send(stream);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+          request.log.warn({ asin, chunkId }, "Audio not found");
           return reply
             .status(404)
             .send({ message: "Audio preview not found" } as never);

@@ -11,6 +11,8 @@ import type { Stats } from "node:fs";
 import path from "node:path";
 import type { Kindle } from "kindle-api";
 
+import { log } from "../logger.js";
+
 import {
   ensureChunkDownloaded,
   resolveArtifacts,
@@ -38,6 +40,7 @@ export type RunChunkPipelineOptions = {
   kindle: Kindle;
   startingPosition: number | string;
   audioProvider: "cartesia" | "elevenlabs";
+  skipLlmPreprocessing?: boolean;
 };
 
 export type ChunkPipelinePositionRange = {
@@ -63,15 +66,22 @@ export async function runChunkPipeline(
   const DEFAULT_RENDER_NUM_PAGES = 5;
   const DEFAULT_RENDER_SKIP_PAGES = 0;
   const DEFAULT_OCR_MAX_PAGES = 5;
+
+  log.debug({ asin: options.asin, startingPosition: options.startingPosition }, "Determining pipeline steps");
   const plan = await determineSteps({
     asin: options.asin,
     startingPosition: options.startingPosition,
   });
+  log.debug(
+    { needsDownload: plan.needsDownload, needsOcr: plan.needsOcr, needsAudio: plan.needsAudio },
+    "Pipeline plan determined"
+  );
 
   let activeChunk: LoadedChunk | undefined = plan.existing;
   let downloadExecuted = false;
 
   if (plan.needsDownload) {
+    log.info({ asin: options.asin }, "Downloading chunk from Kindle");
     const downloadResult = await ensureChunkDownloaded({
       asin: options.asin,
       kindle: options.kindle,
@@ -91,6 +101,7 @@ export async function runChunkPipeline(
       artifacts: downloadResult.artifacts,
     };
     downloadExecuted = true;
+    log.info({ chunkId: downloadResult.chunkId }, "Chunk downloaded");
   }
 
   if (!activeChunk) {
@@ -109,6 +120,7 @@ export async function runChunkPipeline(
   let ocrResult: RunChunkOcrResult | undefined;
   const shouldRunOcr = plan.needsOcr || downloadExecuted;
   if (shouldRunOcr) {
+    log.info({ chunkId: activeChunk.chunkId }, "Running text extraction");
     executedSteps.push("ocr");
     ocrResult = await runChunkOcr({
       chunkId: activeChunk.chunkId,
@@ -118,6 +130,7 @@ export async function runChunkPipeline(
       startPage: 0,
       maxPages: DEFAULT_OCR_MAX_PAGES,
     });
+    log.info({ processedPages: ocrResult.processedPages }, "Text extraction complete");
   }
 
   let combinedTextPath =
@@ -132,6 +145,7 @@ export async function runChunkPipeline(
   let audioDurationSeconds: number | undefined;
   const shouldRunAudio = plan.needsAudio || shouldRunOcr;
   if (shouldRunAudio && targetRange) {
+    log.info({ chunkId: activeChunk.chunkId, provider: options.audioProvider }, "Generating audio");
     executedSteps.push("audio");
     const generateAudio = options.audioProvider === "elevenlabs"
       ? generateElevenLabsAudio
@@ -142,6 +156,7 @@ export async function runChunkPipeline(
       chunkDir: activeChunk.chunkDir,
       range: targetRange,
       combinedTextPath,
+      skipLlmPreprocessing: options.skipLlmPreprocessing,
     });
 
     await recordChunkAudioArtifacts({
@@ -156,6 +171,7 @@ export async function runChunkPipeline(
     activeChunk.artifacts.audioBenchmarksPath =
       audioResult.benchmarksPath;
     audioDurationSeconds = audioResult.totalDurationSeconds;
+    log.info({ durationSeconds: audioDurationSeconds }, "Audio generation complete");
   }
 
   if (audioDurationSeconds === undefined) {

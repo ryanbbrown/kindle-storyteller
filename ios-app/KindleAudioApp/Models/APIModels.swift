@@ -30,6 +30,7 @@ struct BookDetailsResponse: Decodable, Equatable {
 struct PipelineRequest: Encodable {
     let startingPosition: String
     let audioProvider: String
+    let skipLlmPreprocessing: Bool
 }
 
 struct PipelineResponse: Decodable, Equatable {

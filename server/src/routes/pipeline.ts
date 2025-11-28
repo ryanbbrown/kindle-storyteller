@@ -15,6 +15,7 @@ type PipelineParams = {
 type PipelineBody = {
   startingPosition?: number | string;
   audioProvider: "cartesia" | "elevenlabs";
+  skipLlmPreprocessing?: boolean;
 };
 
 type PipelineResponse = ChunkPipelineState;
@@ -55,18 +56,30 @@ export async function registerPipelineRoutes(
         .send({ message: "audioProvider must be 'cartesia' or 'elevenlabs'" } as never);
     }
 
+    request.log.info(
+      { asin, startingPosition, audioProvider },
+      "Starting chunk pipeline"
+    );
+
+    const skipLlmPreprocessing = request.body?.skipLlmPreprocessing ?? false;
+
     const options: RunChunkPipelineOptions = {
       asin,
       kindle: session.kindle,
       startingPosition,
       audioProvider,
+      skipLlmPreprocessing,
     };
 
     try {
       const result = await runChunkPipeline(options);
+      request.log.info(
+        { asin, chunkId: result.chunkId, steps: result.steps },
+        "Pipeline completed"
+      );
       return reply.status(200).send(result);
     } catch (error) {
-      request.log.error({ err: error }, "Failed to run chunk pipeline");
+      request.log.error({ err: error, asin }, "Failed to run chunk pipeline");
       return reply
         .status(500)
         .send({ message: "Failed to run chunk pipeline" } as never);

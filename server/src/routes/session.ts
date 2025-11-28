@@ -30,6 +30,8 @@ export async function registerSessionRoutes(
     async (request, reply) => {
       const body = request.body ?? {};
 
+      request.log.info("Creating new Kindle session");
+
       try {
         const session = await store.createSession({
           cookies: body.cookieString ?? "",
@@ -42,6 +44,11 @@ export async function registerSessionRoutes(
             apiKey: body.tlsApiKey ?? env.tlsServerApiKey,
           },
         });
+
+        request.log.info(
+          { sessionId: session.id, bookCount: session.booksCache.length },
+          "Session created successfully"
+        );
 
         return reply.status(201).send({
           sessionId: session.id,

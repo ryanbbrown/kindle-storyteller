@@ -5,6 +5,7 @@ import cors from "@fastify/cors";
 
 import { env } from "./config/env.js";
 import { SessionStore } from "./session-store.js";
+import { requireApiKey } from "./utils/auth.js";
 import { registerSessionRoutes } from "./routes/session.js";
 import { registerBooksRoutes } from "./routes/books.js";
 import { registerProgressRoutes } from "./routes/progress.js";
@@ -28,6 +29,12 @@ export async function buildApp() {
     credentials: true,
   });
 
+  app.addHook("onRequest", async (request, reply) => {
+    if (!requireApiKey(request, reply)) {
+      return;
+    }
+  });
+
   await registerSessionRoutes(app, store);
   await registerBooksRoutes(app, store);
   await registerProgressRoutes(app, store);
@@ -36,10 +43,7 @@ export async function buildApp() {
   await registerBenchmarkRoutes(app, store);
 
   const timer = setInterval(() => {
-    const removed = store.gc();
-    if (removed > 0) {
-      app.log.debug({ removed }, "Cleaned up expired sessions");
-    }
+    store.gc();
   }, Math.max(env.sessionTtlMs, 60_000));
 
   timer.unref();

@@ -15,9 +15,8 @@ let cachedAudioConfig: ElevenLabsAudioConfig | undefined;
 
 const DEFAULT_OUTPUT_FORMAT: TextToSpeechConvertWithTimestampsRequestOutputFormat = OutputFormatEnum.Mp344100128;
 const BENCHMARK_INTERVAL_SECONDS = 5;
-// George voice - warm resonance that instantly captivates listeners
-// See more voices at: data/elevenlabs-voices.json or https://elevenlabs.io/app/voice-library
-const DEFAULT_VOICE_ID = "JBFqnCBsd6RMkjVDRZzb";
+// Laura voice, See more voices at: data/elevenlabs-voices.json or https://elevenlabs.io/app/voice-library
+const DEFAULT_VOICE_ID = "FGY2WhTYpPnrIDTdsKH5";
 const DEFAULT_MODEL_ID = "eleven_flash_v2_5";
 export const ELEVENLABS_SENTENCE_TARGET = 2;
 

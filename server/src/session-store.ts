@@ -6,6 +6,8 @@ import {
   type KindleConfiguration,
 } from "kindle-api";
 
+import { log } from "./logger.js";
+
 export type SessionContext = {
   id: string;
   kindle: Kindle;
@@ -27,6 +29,7 @@ export class SessionStore {
 
   /** Creates a Kindle session context backed by the Kindle API client. */
   async createSession(input: CreateSessionInput): Promise<SessionContext> {
+    log.debug("Initializing Kindle client");
     const kindle = await Kindle.fromConfig({
       cookies: input.cookies,
       deviceToken: input.deviceToken,
@@ -48,6 +51,7 @@ export class SessionStore {
     };
 
     this.sessions.set(sessionId, context);
+    log.info({ sessionId, bookCount: context.booksCache.length }, "Session created");
     return context;
   }
 
@@ -82,6 +86,9 @@ export class SessionStore {
         this.sessions.delete(id);
         removed += 1;
       }
+    }
+    if (removed > 0) {
+      log.debug({ removed }, "Expired sessions cleaned up");
     }
     return removed;
   }

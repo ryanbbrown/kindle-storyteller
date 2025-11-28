@@ -6,6 +6,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
+import { log } from "../../logger.js";
+
 const execFileAsync = promisify(execFile);
 
 import {
@@ -15,6 +17,7 @@ import {
   computeProportionalEndPosition,
   buildBenchmarkTimeline,
 } from "./utils.js";
+import { transformTextForTTS } from "../llm.js";
 import type {
   BenchmarkEntry,
   ChunkAudioSummary,
@@ -34,12 +37,12 @@ type CartesiaSSEEvent =
 export async function generateChunkPreviewAudio(
   options: GenerateChunkAudioOptions,
 ): Promise<ChunkAudioSummary> {
-  const { asin, chunkId, chunkDir, range, combinedTextPath } = options;
+  const { asin, chunkId, chunkDir, range, combinedTextPath, skipLlmPreprocessing } = options;
 
   const config = getCartesiaAudioConfig();
 
-  await fs.access(combinedTextPath);
-  const rawText = await fs.readFile(combinedTextPath, "utf8");
+  const cartesiaContentPath = path.join(chunkDir, "cartesia-content.txt");
+  const rawText = await getOrCreateCartesiaContent(combinedTextPath, cartesiaContentPath, skipLlmPreprocessing ?? false);
   const { normalized: normalizedText, map: normalizedMap } =
     normalizeTextWithMap(rawText);
 
@@ -188,6 +191,7 @@ async function callCartesiaTTS(
     throw new Error("Missing CARTESIA_API_KEY environment variable");
   }
 
+  log.debug({ textLength: text.length, voiceId: config.voiceId }, "Calling Cartesia TTS API");
   const response = await fetch("https://api.cartesia.ai/tts/sse", {
     method: "POST",
     headers: {
@@ -202,15 +206,18 @@ async function callCartesiaTTS(
       output_format: config.outputFormat,
       language: "en",
       add_timestamps: true,
+      generation_config: { speed: config.speed },
     }),
   });
 
   if (!response.ok) {
     const errorText = await response.text();
+    log.error({ status: response.status, error: errorText }, "Cartesia API error");
     throw new Error(`Cartesia API error (${response.status}): ${errorText}`);
   }
 
   const result = await collectAudioAndTimestamps(response);
+  log.debug({ durationSeconds: result.totalDurationSeconds, wordCount: result.wordTimestamps.words.length }, "Cartesia TTS complete");
   // Convert raw PCM to WAV
   const wavBuffer = pcmToWav(result.audioBuffer, config.outputFormat.sample_rate);
   return { ...result, audioBuffer: wavBuffer };
@@ -436,5 +443,31 @@ function findWordAtTime(timestamps: WordTimestamps, time: number): number {
     }
   }
   return 0;
+}
+
+/** Loads cached Cartesia content or creates it by transforming the source text via LLM. */
+async function getOrCreateCartesiaContent(
+  combinedTextPath: string,
+  cartesiaContentPath: string,
+  skipLlmPreprocessing: boolean,
+): Promise<string> {
+  if (!skipLlmPreprocessing) {
+    try {
+      return await fs.readFile(cartesiaContentPath, "utf8");
+    } catch {
+      // File doesn't exist, create it
+    }
+  }
+
+  await fs.access(combinedTextPath);
+  const originalText = await fs.readFile(combinedTextPath, "utf8");
+
+  if (skipLlmPreprocessing) {
+    return originalText;
+  }
+
+  const transformedText = await transformTextForTTS(originalText, "cartesia");
+  await fs.writeFile(cartesiaContentPath, transformedText, "utf8");
+  return transformedText;
 }
 

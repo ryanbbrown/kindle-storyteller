@@ -28,6 +28,7 @@ export type GenerateChunkAudioOptions = {
     end: { positionId: number };
   };
   combinedTextPath: string;
+  skipLlmPreprocessing?: boolean;
 };
 
 export type WordTimestamps = {

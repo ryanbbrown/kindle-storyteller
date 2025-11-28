@@ -123,6 +123,11 @@ final class SessionService {
         let normalized = normalizedApiMessage(from: apiError)
         let lower = normalized.lowercased()
 
+        // API key errors are not session expiry - let them bubble up as-is
+        if lower.contains("api key") {
+            return nil
+        }
+
         if apiError.statusCode == 401 || apiError.statusCode == 403 {
             return "Amazon rejected our credentials (HTTP \(apiError.statusCode))."
         }

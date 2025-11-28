@@ -13,6 +13,7 @@ final class ContentViewModel: ObservableObject {
     @Published var downloadedAudioURL: URL?
     @Published var audioErrorMessage: String?
     @Published var selectedAudioProvider: String = "cartesia"
+    @Published var useLlmPreprocessing: Bool = true
     @Published var manualStartingPosition: String = ""
     @Published var useManualStartingPosition: Bool = false
 
@@ -45,7 +46,8 @@ final class ContentViewModel: ObservableObject {
 
             let request = PipelineRequest(
                 startingPosition: startingPosition,
-                audioProvider: selectedAudioProvider
+                audioProvider: selectedAudioProvider,
+                skipLlmPreprocessing: !useLlmPreprocessing
             )
             let response = try await client.runPipeline(sessionId: sessionId, asin: asin, request: request)
             latestPipeline = response
@@ -168,7 +170,10 @@ final class ContentViewModel: ObservableObject {
             throw ValidationError.invalidBaseURL
         }
         log("API Base URL: \(baseURL.absoluteString)")
-        return APIClient(baseURL: baseURL)
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 180
+        let session = URLSession(configuration: config)
+        return APIClient(baseURL: baseURL, urlSession: session)
     }
 
     private func resolveBaseURL() -> URL? {

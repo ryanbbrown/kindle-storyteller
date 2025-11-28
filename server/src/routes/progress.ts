@@ -16,6 +16,7 @@ type ProgressResponse = {
   status: number;
 };
 
+/** Registers progress sync routes for Kindle reading position. */
 export async function registerProgressRoutes(
   app: FastifyInstance,
   store: SessionStore
@@ -47,12 +48,14 @@ export async function registerProgressRoutes(
     }
 
     const position = String(positionValue);
+    request.log.debug({ asin, position }, "Syncing reading progress");
 
     try {
       const result = await session.kindle.stillReading({ asin, position });
+      request.log.debug({ asin, success: result.success }, "Progress sync complete");
       return reply.status(result.success ? 200 : 502).send(result);
     } catch (error) {
-      request.log.error({ err: error }, "stillReading failed");
+      request.log.error({ err: error, asin }, "stillReading failed");
       return reply.status(500).send({
         success: false,
         status: 500,

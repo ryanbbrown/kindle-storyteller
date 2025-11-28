@@ -3,10 +3,12 @@ import Foundation
 struct APIClient {
     let baseURL: URL
     let urlSession: URLSession
+    let apiKey: String
 
     init(baseURL: URL, urlSession: URLSession = .shared) {
         self.baseURL = baseURL
         self.urlSession = urlSession
+        self.apiKey = Bundle.main.object(forInfoDictionaryKey: "SERVER_API_KEY") as? String ?? ""
     }
 
     func createSession(request: SessionRequest) async throws -> SessionResponse {
@@ -60,6 +62,7 @@ struct APIClient {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("Bearer \(sessionId)", forHTTPHeaderField: "Authorization")
+        request.setValue(apiKey, forHTTPHeaderField: "X-API-Key")
 
         let (tempURL, response) = try await urlSession.download(for: request)
 
@@ -117,6 +120,7 @@ struct APIClient {
         headers.forEach { key, value in
             request.setValue(value, forHTTPHeaderField: key)
         }
+        request.setValue(apiKey, forHTTPHeaderField: "X-API-Key")
 
         if let body {
             request.httpBody = body

@@ -1,1 +1,2 @@
 API_BASE_HOST = your-fly-app.fly.dev
+SERVER_API_KEY = your-secret-key-here

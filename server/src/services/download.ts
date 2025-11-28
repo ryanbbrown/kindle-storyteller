@@ -12,6 +12,8 @@ import { promisify } from "node:util";
 
 import type { Kindle } from "kindle-api";
 
+import { log } from "../logger.js";
+
 import { env } from "../config/env.js";
 import { writeChunkMetadata } from "./chunk-metadata-service.js";
 import type {
@@ -90,12 +92,14 @@ async function downloadFreshChunk(options: {
   const stagingExtractDir = path.join(stagingDir, "extracted");
   await fs.mkdir(stagingExtractDir, { recursive: true });
 
+  log.debug({ asin, startingPosition: renderOptions.startingPosition }, "Calling Kindle renderer");
   const buffer = await kindle.renderChunk({
     asin,
     startingPosition: renderOptions.startingPosition,
     numPages: renderOptions.numPages,
     skipPages: renderOptions.skipPages,
   });
+  log.debug({ asin, bytes: buffer.length }, "Renderer response received");
 
   await fs.writeFile(stagingTar, buffer);
 

@@ -36,11 +36,14 @@ export async function registerBenchmarkRoutes(
           } as never);
       }
 
+      request.log.debug({ asin, chunkId }, "Fetching benchmarks");
+
       try {
         const payload = await openBenchmarkPayload(asin, chunkId);
         return reply.status(200).send(payload);
       } catch (error) {
         if ((error as { statusCode?: number }).statusCode === 404) {
+          request.log.warn({ asin, chunkId }, "Benchmarks not found");
           return reply
             .status(404)
             .send({ message: "Benchmarks not found" } as never);

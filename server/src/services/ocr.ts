@@ -11,6 +11,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
+import { log } from "../logger.js";
 import {
   readChunkMetadata,
   writeChunkMetadata,
@@ -134,6 +135,7 @@ async function executeOcrPipeline(options: {
 
 /** Executes the text extraction pipeline with uv and returns its summary payload. */
 async function runOcrCommand(args: string[]): Promise<PipelineSummary> {
+  log.debug({ args }, "Running text extraction pipeline");
   try {
     const { stdout } = await execFileAsync(
       "uv",
@@ -145,10 +147,13 @@ async function runOcrCommand(args: string[]): Promise<PipelineSummary> {
       } as const,
     );
 
-    return parseSummary(stdout);
+    const summary = parseSummary(stdout);
+    log.debug({ totalPages: summary.total_pages, processedPages: summary.processed_pages }, "Text extraction complete");
+    return summary;
   } catch (error) {
     const err = error as NodeJS.ErrnoException & { stderr?: string };
     const details = err.stderr ? `${err.message}\n${err.stderr}` : err.message;
+    log.error({ err: error }, "Text extraction pipeline failed");
     throw new Error(`OCR pipeline failed: ${details}`);
   }
 }

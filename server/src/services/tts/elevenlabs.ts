@@ -5,6 +5,8 @@ import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { log } from "../../logger.js";
+
 import {
   normalizeTextWithMap,
   computeSentenceSliceLength,
@@ -13,6 +15,7 @@ import {
   buildBenchmarkTimeline,
   recordChunkAudioArtifacts,
 } from "./utils.js";
+import { transformTextForTTS } from "../llm.js";
 import type {
   BenchmarkEntry,
   ChunkAudioSummary,
@@ -36,13 +39,14 @@ export async function generateChunkPreviewAudio(
     chunkDir,
     range,
     combinedTextPath,
+    skipLlmPreprocessing,
   } = options;
 
   // Pull env-driven limits/model settings once per process.
   const config = getElevenLabsAudioConfig();
 
-  await fs.access(combinedTextPath);
-  const rawText = await fs.readFile(combinedTextPath, "utf8");
+  const elevenLabsContentPath = path.join(chunkDir, "elevenlabs-content.txt");
+  const rawText = await getOrCreateElevenLabsContent(combinedTextPath, elevenLabsContentPath, skipLlmPreprocessing ?? false);
   const { normalized: normalizedText, map: normalizedMap } =
     normalizeTextWithMap(rawText);
 
@@ -62,6 +66,7 @@ export async function generateChunkPreviewAudio(
   }
 
   // Ask ElevenLabs for both audio bytes and per-character timestamps.
+  log.debug({ textLength: textForTts.length, voiceId: config.voiceId }, "Calling ElevenLabs TTS API");
   const { audioBase64, alignment, normalizedAlignment } =
     await getElevenLabsClient().textToSpeech.convertWithTimestamps(
       config.voiceId,
@@ -74,8 +79,10 @@ export async function generateChunkPreviewAudio(
 
   const activeAlignment = alignment ?? normalizedAlignment;
   if (!activeAlignment?.characterStartTimesSeconds?.length) {
+    log.error("Timestamp alignment data was not returned by ElevenLabs");
     throw new Error("Timestamp alignment data was not returned by ElevenLabs");
   }
+  log.debug({ durationSeconds: activeAlignment.characterEndTimesSeconds.at(-1) }, "ElevenLabs TTS complete");
 
   // Sanity check that ElevenLabs aligned against the exact text we sent.
   if (activeAlignment.characters.length !== textForTts.length) {
@@ -289,4 +296,30 @@ function getElevenLabsClient(): ElevenLabsClient {
   // Lazily instantiate the SDK with the user's API key.
   cachedElevenLabsClient = new ElevenLabsClient({ apiKey });
   return cachedElevenLabsClient;
+}
+
+/** Loads cached ElevenLabs content or creates it by transforming the source text via LLM. */
+async function getOrCreateElevenLabsContent(
+  combinedTextPath: string,
+  elevenLabsContentPath: string,
+  skipLlmPreprocessing: boolean,
+): Promise<string> {
+  if (!skipLlmPreprocessing) {
+    try {
+      return await fs.readFile(elevenLabsContentPath, "utf8");
+    } catch {
+      // File doesn't exist, create it
+    }
+  }
+
+  await fs.access(combinedTextPath);
+  const originalText = await fs.readFile(combinedTextPath, "utf8");
+
+  if (skipLlmPreprocessing) {
+    return originalText;
+  }
+
+  const transformedText = await transformTextForTTS(originalText, "elevenlabs");
+  await fs.writeFile(elevenLabsContentPath, transformedText, "utf8");
+  return transformedText;
 }

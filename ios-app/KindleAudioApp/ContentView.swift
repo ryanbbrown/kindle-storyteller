@@ -141,6 +141,8 @@ struct ContentView: View {
             VStack(spacing: 12) {
                 audioProviderPicker
 
+                Toggle("Use LLM preprocessing", isOn: $viewModel.useLlmPreprocessing)
+
                 Button(action: { Task { await viewModel.generateAudiobook() } }) {
                     Text(viewModel.isGeneratingAudiobook ? "Generating..." : "Generate")
                         .font(.headline)
@@ -299,6 +301,13 @@ struct ContentView: View {
                 }
             }
             .overlay(loginHintOverlay)
+            .alert(item: $viewModel.activeAlert) { alert in
+                Alert(
+                    title: Text(alert.title),
+                    message: Text(alert.message),
+                    dismissButton: .default(Text("OK"))
+                )
+            }
         }
         .onAppear {
             if !hasShownLoginHint {
