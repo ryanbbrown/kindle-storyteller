@@ -22,9 +22,10 @@ server/
 │   │   ├── progress.ts       # POST /books/:asin/progress - sync reading position
 │   │   └── benchmarks.ts     # Audio benchmark data endpoints
 │   ├── services/
-│   │   ├── chunk-pipeline.ts # Orchestrates download → OCR → TTS stages
+│   │   ├── chunk-pipeline.ts # Orchestrates download → OCR → LLM → TTS stages
 │   │   ├── download.ts       # Downloads content via kindle-api renderChunk
 │   │   ├── ocr.ts            # Runs text-extraction Python pipeline
+│   │   ├── llm.ts            # OpenAI text transformation for TTS
 │   │   ├── chunk-metadata-service.ts  # Reads/writes chunk metadata JSON
 │   │   └── tts/
 │   │       ├── index.ts      # TTS barrel export
@@ -33,6 +34,7 @@ server/
 │   │       └── utils.ts      # Text normalization, benchmark generation
 │   ├── config/
 │   │   ├── env.ts            # Environment variable parsing
+│   │   ├── llm.ts            # OpenAI config (model, prompts)
 │   │   ├── elevenlabs.ts     # ElevenLabs config (voice, model, limits)
 │   │   └── cartesia.ts       # Cartesia config
 │   ├── types/
@@ -58,10 +60,10 @@ Sessions are created via `POST /session` with Kindle credentials:
 
 ### 2. Audiobook Pipeline
 
-The pipeline (`POST /books/:asin/pipeline`) runs three stages:
+The pipeline (`POST /books/:asin/pipeline`) runs up to four stages:
 
 ```
-Download → OCR → TTS
+Download → OCR → LLM (optional) → TTS
 ```
 
 **Download** (`services/download.ts`):
@@ -72,7 +74,14 @@ Download → OCR → TTS
 **OCR** (`services/ocr.ts`):
 - Invokes the `text-extraction` Python pipeline via `uv run python pipeline.py`
 - Extracts text from rendered page images
-- Outputs combined text file for TTS processing
+- Outputs combined text file (`full-content.txt`)
+
+**LLM** (`services/llm.ts`) - optional:
+- Transforms extracted text for better TTS narration using OpenAI
+- Provider-specific prompts optimize output for ElevenLabs vs Cartesia
+- Outputs provider-specific content file (`{provider}-content.txt`)
+- Skip with `skipLlmPreprocessing: true` in pipeline request
+- Requires `OPENAI_API_KEY` environment variable
 
 **TTS** (`services/tts/*.ts`):
 - Supports ElevenLabs or Cartesia providers (selected per-request)
@@ -86,7 +95,8 @@ Content is cached in `data/books/{asin}/chunks/{chunkId}/`:
 - `metadata.json` - chunk position ranges and artifact paths
 - `extracted/` - raw renderer output
 - `pages/` - processed page images
-- `full-content.txt` - extracted text
+- `full-content.txt` - extracted text from OCR
+- `{provider}-content.txt` - LLM-preprocessed text (per TTS provider)
 - `audio/audio.mp3` - generated audiobook audio
 - `audio/alignment.json` - character-to-timestamp mapping
 - `audio/benchmarks.json` - time-indexed position lookups
@@ -115,4 +125,6 @@ The pipeline checks for existing artifacts and skips completed stages.
 | `TLS_SERVER_URL` | localhost:8080 | TLS proxy URL |
 | `TLS_SERVER_API_KEY` | - | TLS proxy API key |
 | `ELEVENLABS_API_KEY` | - | ElevenLabs API key |
+| `CARTESIA_API_KEY` | - | Cartesia API key |
+| `OPENAI_API_KEY` | - | OpenAI API key (for LLM preprocessing) |
 | `LOG_LEVEL` | info | Fastify log level |

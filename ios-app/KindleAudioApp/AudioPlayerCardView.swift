@@ -106,6 +106,13 @@ struct AudioPlayerCardView: View {
                     .foregroundColor(.red)
                     .multilineTextAlignment(.center)
             }
+
+            // Sync warning
+            if coordinator.isSyncDisabled {
+                Label("Sync disabled – select a book in the browser to enable", systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
         }
         .padding(.top, 8)
         .onAppear {

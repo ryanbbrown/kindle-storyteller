@@ -166,6 +166,7 @@ export async function generateChunkPreviewAudio(
     audioPath,
     alignmentPath,
     benchmarks,
+    ttsProvider: "elevenlabs" as const,
   };
   await fs.writeFile(
     benchmarksPath,
@@ -182,6 +183,7 @@ export async function generateChunkPreviewAudio(
     textLength: textForTts.length,
     totalDurationSeconds,
     benchmarkIntervalSeconds: config.benchmarkIntervalSeconds,
+    ttsProvider: "elevenlabs" as const,
   };
 }
 

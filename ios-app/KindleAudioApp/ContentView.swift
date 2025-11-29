@@ -22,6 +22,7 @@ struct ContentView: View {
                pipelineConfigurationSection
                 actionButtonsSection
                 audioPreviewSection
+                audiobooksSection
                 // DEBUG
 //                logSection
             }
@@ -202,8 +203,8 @@ struct ContentView: View {
                 } else if viewModel.downloadedAudioURL != nil {
                     AudioPlayerCardView(
                         coordinator: viewModel.playbackCoordinator,
-                        title: sessionStore.bookDetails?.title ?? "Kindle Audio Preview",
-                        coverImageURL: sessionStore.bookDetails?.coverImage
+                        title: viewModel.playbackCoordinator.currentTitle ?? "Kindle Audio Preview",
+                        coverImageURL: viewModel.playbackCoordinator.currentCoverImageURL
                     )
 
                     if let message = viewModel.audioErrorMessage ?? viewModel.playbackCoordinator.audioController.errorMessage {
@@ -247,6 +248,110 @@ struct ContentView: View {
                 .frame(minHeight: 120, maxHeight: 200)
             }
         }
+    }
+
+    // MARK: - Audiobooks
+
+    @State private var audiobookToDelete: AudiobookEntry?
+
+    private var audiobooksSection: some View {
+        GroupBox("Generated Audiobooks") {
+            VStack(spacing: 12) {
+                if viewModel.isLoadingAudiobooks {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                } else if viewModel.audiobooks.isEmpty {
+                    Text("No audiobooks generated yet")
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                } else {
+                    audiobooksList
+                }
+
+                Button(action: { Task { await viewModel.fetchAudiobooks() } }) {
+                    Text("Refresh")
+                        .font(.subheadline)
+                }
+                .disabled(viewModel.isLoadingAudiobooks)
+            }
+            .padding(.top, 8)
+        }
+        .onAppear {
+            Task { await viewModel.fetchAudiobooks() }
+        }
+        .alert("Delete Audiobook?", isPresented: .init(
+            get: { audiobookToDelete != nil },
+            set: { if !$0 { audiobookToDelete = nil } }
+        )) {
+            Button("Cancel", role: .cancel) {
+                audiobookToDelete = nil
+            }
+            Button("Delete", role: .destructive) {
+                if let entry = audiobookToDelete {
+                    Task { await viewModel.deleteAudiobook(entry) }
+                }
+                audiobookToDelete = nil
+            }
+        } message: {
+            if let entry = audiobookToDelete {
+                Text("This will delete the audio for \"\(entry.bookTitle ?? entry.asin)\". You can regenerate it later.")
+            }
+        }
+    }
+
+    private var audiobooksList: some View {
+        List {
+            ForEach(viewModel.audiobooks) { entry in
+                audiobookRow(entry)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        Task { await viewModel.playAudiobook(entry) }
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) {
+                            audiobookToDelete = entry
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
+                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                        Button {
+                            Task { await viewModel.playAudiobook(entry) }
+                        } label: {
+                            Label("Play", systemImage: "play.fill")
+                        }
+                        .tint(.green)
+                    }
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .frame(minHeight: 300, maxHeight: 500)
+    }
+
+    private func audiobookRow(_ entry: AudiobookEntry) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(entry.bookTitle ?? entry.asin)
+                .font(.subheadline)
+                .lineLimit(1)
+            HStack(spacing: 12) {
+                Label(String(format: "%04.1f%%", entry.startPercent), systemImage: "book")
+                    .monospaced()
+                Label(formatDuration(entry.durationSeconds), systemImage: "clock")
+                Label(entry.ttsProvider, systemImage: "waveform")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func formatDuration(_ seconds: Double) -> String {
+        let minutes = Int(seconds) / 60
+        let secs = Int(seconds) % 60
+        return String(format: "%d:%02d", minutes, secs)
     }
 
     // MARK: - Login Sheet

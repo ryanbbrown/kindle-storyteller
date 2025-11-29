@@ -12,6 +12,7 @@ import { registerProgressRoutes } from "./routes/progress.js";
 import { registerPipelineRoutes } from "./routes/pipeline.js";
 import { registerChunkAudioRoutes } from "./routes/chunk-audio.js";
 import { registerBenchmarkRoutes } from "./routes/benchmarks.js";
+import { registerAudiobooksRoutes } from "./routes/audiobooks.js";
 
 export async function buildApp() {
   const app = Fastify({
@@ -39,8 +40,9 @@ export async function buildApp() {
   await registerBooksRoutes(app, store);
   await registerProgressRoutes(app, store);
   await registerPipelineRoutes(app, store);
-  await registerChunkAudioRoutes(app, store);
-  await registerBenchmarkRoutes(app, store);
+  await registerChunkAudioRoutes(app);
+  await registerBenchmarkRoutes(app);
+  await registerAudiobooksRoutes(app);
 
   const timer = setInterval(() => {
     store.gc();

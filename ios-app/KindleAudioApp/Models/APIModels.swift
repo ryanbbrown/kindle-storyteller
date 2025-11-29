@@ -5,9 +5,9 @@ import Foundation
 struct SessionRequest: Encodable {
     let cookieString: String
     let deviceToken: String
-    let renderingToken: String
-    let rendererRevision: String
-    let guid: String
+    let renderingToken: String?
+    let rendererRevision: String?
+    let guid: String?
     let tlsServerUrl: String?
     let tlsApiKey: String?
 }
@@ -50,10 +50,14 @@ struct PositionRange: Decodable, Equatable {
 enum PipelineStep: String, Codable, Equatable {
     case download
     case ocr
+    case llm
     case audio
 
     var displayName: String {
-        rawValue.capitalized
+        switch self {
+        case .llm: return "LLM"
+        default: return rawValue.capitalized
+        }
     }
 }
 
@@ -86,6 +90,19 @@ struct UpdateProgressResponse: Decodable, Equatable {
 
 struct EmptyResponse: Decodable {
     init() {}
+}
+
+// MARK: - Audiobooks
+
+struct AudiobookEntry: Codable, Identifiable {
+    var id: String { "\(asin)_\(chunkId)" }
+    let asin: String
+    let chunkId: String
+    let bookTitle: String?
+    let coverImage: String?
+    let startPercent: Double
+    let durationSeconds: Double
+    let ttsProvider: String
 }
 
 // MARK: - Errors

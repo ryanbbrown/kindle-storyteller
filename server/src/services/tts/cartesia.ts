@@ -124,6 +124,7 @@ export async function generateChunkPreviewAudio(
     audioPath,
     alignmentPath,
     benchmarks,
+    ttsProvider: "cartesia" as const,
   };
   await fs.writeFile(
     benchmarksPath,
@@ -140,6 +141,7 @@ export async function generateChunkPreviewAudio(
     textLength: textForTts.length,
     totalDurationSeconds,
     benchmarkIntervalSeconds: config.benchmarkIntervalSeconds,
+    ttsProvider: "cartesia" as const,
   };
 }
 

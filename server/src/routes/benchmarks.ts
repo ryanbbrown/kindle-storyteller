@@ -1,7 +1,5 @@
 import type { FastifyInstance } from "fastify";
 
-import type { SessionStore } from "../session-store.js";
-import { requireSession } from "../utils/auth.js";
 import {
   openBenchmarkPayload,
   type BenchmarkPayload,
@@ -13,18 +11,10 @@ type BenchmarkParams = {
 };
 
 /** Registers routes that expose benchmark checkpoints for a chunk. */
-export async function registerBenchmarkRoutes(
-  app: FastifyInstance,
-  store: SessionStore,
-): Promise<void> {
+export async function registerBenchmarkRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Params: BenchmarkParams; Reply: BenchmarkPayload }>(
     "/books/:asin/chunks/:chunkId/benchmarks",
     async (request, reply) => {
-      const session = requireSession(store, request, reply);
-      if (!session) {
-        return;
-      }
-
       const asin = request.params.asin?.trim();
       const chunkId = request.params.chunkId?.trim();
 

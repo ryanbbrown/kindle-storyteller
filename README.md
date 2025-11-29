@@ -7,7 +7,7 @@
 ## Components
 
 - `ios-app`: SwiftUI client that captures Kindle session info and drives the pipeline.
-- `server`: Fastify backend orchestrating Kindle fetches and text extraction. Uses [`kindle-api`](https://github.com/ryanbbrown/kindle-api) for Kindle interactions.
+- `server`: Fastify backend orchestrating Kindle fetches and text extraction. Uses my fork of [`kindle-api`](https://github.com/ryanbbrown/kindle-api) for Kindle interactions.
 - `text-extraction`: Python pipeline for extracting text from Kindle renderer output.
 - `tls-client-api`: Prebuilt TLS proxy binary used by the backend for Amazon requests ([repo link](https://github.com/bogdanfinn/tls-client-api)).
 
@@ -19,6 +19,27 @@ There are three ways to test the app (iPhone simulator on Mac, iPhone on local n
 - `localhost:3000` – local development with simulator
 - `<your-mac-ip>:3000` – testing on a physical iPhone connected to the same network
 - `<your-fly-app>.fly.dev` – production Fly.io deployment, works for simulator or actual iPhone
+
+### Server Environment Variables
+
+The server requires several API keys and configuration values. Copy the example env file and fill in your values:
+
+```bash
+cd server
+cp .env.example .env
+```
+
+Required variables:
+- `SERVER_API_KEY` – A secret key for authenticating iOS client requests to the server. Set this to any secure random string, then configure the same value in the iOS app.
+- `TLS_SERVER_URL` – URL of the TLS proxy (default: `http://localhost:8080` for local dev)
+- `TLS_SERVER_API_KEY` – API key for the TLS proxy
+
+TTS provider keys (at least one required):
+- `ELEVENLABS_API_KEY` – [ElevenLabs](https://elevenlabs.io/) API key for text-to-speech
+- `CARTESIA_API_KEY` – [Cartesia](https://cartesia.ai/) API key for text-to-speech
+
+LLM key (for text preprocessing):
+- `OPENAI_API_KEY` – [OpenAI](https://platform.openai.com/) API key for LLM-based text preprocessing
 
 ### Running Locally
 
@@ -66,12 +87,18 @@ The repository includes a multi-stage `Dockerfile`, process supervisor (`start.s
    ```
    Adjust the generated app name/region inside `fly.toml` if needed.
 
-2. **Configure secrets** – set the TLS proxy key and TTS API keys:
+2. **Configure secrets** – set the server API key, TLS proxy key, TTS keys, and LLM key:
    ```bash
    fly secrets set \
+     SERVER_API_KEY="your-secret-key" \
      TLS_SERVER_API_KEY="replace-me" \
      ELEVENLABS_API_KEY="your-key" \
-     CARTESIA_API_KEY="your-key"
+     CARTESIA_API_KEY="your-key" \
+     OPENAI_API_KEY="your-key"
+   ```
+   Or, if you've already configured `server/.env`, set all secrets from it:
+   ```bash
+   grep -v '^#' server/.env | grep '=' | xargs fly secrets set
    ```
    All Kindle cookies/tokens must come from the iOS client; there's no server-side fallback.
 

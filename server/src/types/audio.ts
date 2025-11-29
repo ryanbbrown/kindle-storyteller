@@ -17,6 +17,7 @@ export type ChunkAudioSummary = {
   textLength: number;
   totalDurationSeconds: number;
   benchmarkIntervalSeconds: number;
+  ttsProvider: "cartesia" | "elevenlabs";
 };
 
 export type GenerateChunkAudioOptions = {

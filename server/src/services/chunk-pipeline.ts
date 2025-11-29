@@ -24,6 +24,7 @@ import {
   generateCartesiaAudio,
   recordChunkAudioArtifacts,
 } from "./tts/index.js";
+import { transformTextForTTS } from "./llm.js";
 import type { ChunkAudioSummary } from "../types/audio.js";
 import { readChunkMetadata } from "./chunk-metadata-service.js";
 import { openBenchmarkPayload } from "../utils/benchmarks.js";
@@ -33,7 +34,7 @@ import type {
   RendererCoverageMetadata,
 } from "../types/chunk-metadata.js";
 
-type PipelineStep = "download" | "ocr" | "audio";
+type PipelineStep = "download" | "ocr" | "llm" | "audio";
 
 export type RunChunkPipelineOptions = {
   asin: string;
@@ -71,9 +72,11 @@ export async function runChunkPipeline(
   const plan = await determineSteps({
     asin: options.asin,
     startingPosition: options.startingPosition,
+    audioProvider: options.audioProvider,
+    skipLlmPreprocessing: options.skipLlmPreprocessing ?? false,
   });
   log.debug(
-    { needsDownload: plan.needsDownload, needsOcr: plan.needsOcr, needsAudio: plan.needsAudio },
+    { needsDownload: plan.needsDownload, needsOcr: plan.needsOcr, needsLlm: plan.needsLlm, needsAudio: plan.needsAudio },
     "Pipeline plan determined"
   );
 
@@ -141,9 +144,21 @@ export async function runChunkPipeline(
     activeChunk.artifacts.combinedTextPath = combinedTextPath;
   }
 
+  // Run LLM preprocessing as a separate step if needed
+  const providerContentPath = path.join(activeChunk.chunkDir, `${options.audioProvider}-content.txt`);
+  const shouldRunLlm = plan.needsLlm || shouldRunOcr;
+  if (shouldRunLlm && !options.skipLlmPreprocessing) {
+    log.info({ chunkId: activeChunk.chunkId, provider: options.audioProvider }, "Running LLM preprocessing");
+    executedSteps.push("llm");
+    const originalText = await fs.readFile(combinedTextPath, "utf8");
+    const transformedText = await transformTextForTTS(originalText, options.audioProvider);
+    await fs.writeFile(providerContentPath, transformedText, "utf8");
+    log.info({ outputLength: transformedText.length }, "LLM preprocessing complete");
+  }
+
   let audioResult: ChunkAudioSummary | undefined;
   let audioDurationSeconds: number | undefined;
-  const shouldRunAudio = plan.needsAudio || shouldRunOcr;
+  const shouldRunAudio = plan.needsAudio || shouldRunLlm;
   if (shouldRunAudio && targetRange) {
     log.info({ chunkId: activeChunk.chunkId, provider: options.audioProvider }, "Generating audio");
     executedSteps.push("audio");
@@ -156,7 +171,7 @@ export async function runChunkPipeline(
       chunkDir: activeChunk.chunkDir,
       range: targetRange,
       combinedTextPath,
-      skipLlmPreprocessing: options.skipLlmPreprocessing,
+      skipLlmPreprocessing: true, // LLM step already ran if needed
     });
 
     await recordChunkAudioArtifacts({
@@ -232,6 +247,7 @@ type LoadedChunk = {
 type StepPlan = {
   needsDownload: boolean;
   needsOcr: boolean;
+  needsLlm: boolean;
   needsAudio: boolean;
   existing?: LoadedChunk;
 };
@@ -248,6 +264,8 @@ type ExistingChunk = {
 async function determineSteps(options: {
   asin: string;
   startingPosition: number | string;
+  audioProvider: "cartesia" | "elevenlabs";
+  skipLlmPreprocessing: boolean;
 }): Promise<StepPlan> {
   const rawStart = String(options.startingPosition ?? "").trim();
   const requestPositionId = Number.parseInt(rawStart, 10);
@@ -260,7 +278,7 @@ async function determineSteps(options: {
     requestPositionId: Math.trunc(requestPositionId),
   });
   if (!existing) {
-    return { needsDownload: true, needsOcr: true, needsAudio: true };
+    return { needsDownload: true, needsOcr: true, needsLlm: !options.skipLlmPreprocessing, needsAudio: true };
   }
 
   const artifacts = resolveArtifacts(existing.range, existing.chunkDir);
@@ -282,10 +300,20 @@ async function determineSteps(options: {
     return {
       needsDownload: false,
       needsOcr: true,
+      needsLlm: !options.skipLlmPreprocessing,
       needsAudio: true,
       existing: loaded,
     };
   }
+
+  // Check if provider-specific LLM-preprocessed content exists
+  const providerContentPath = path.join(
+    existing.chunkDir,
+    `${options.audioProvider}-content.txt`
+  );
+  const hasLlmContent = options.skipLlmPreprocessing
+    ? true
+    : await statMatches(providerContentPath, (stats) => stats.isFile());
 
   const hasAudio = artifacts.audioPath
     ? await statMatches(artifacts.audioPath, (stats) => stats.isFile())
@@ -294,6 +322,7 @@ async function determineSteps(options: {
   return {
     needsDownload: false,
     needsOcr: false,
+    needsLlm: !hasLlmContent,
     needsAudio: !hasAudio,
     existing: loaded,
   };

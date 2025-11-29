@@ -16,6 +16,8 @@ final class ContentViewModel: ObservableObject {
     @Published var useLlmPreprocessing: Bool = true
     @Published var manualStartingPosition: String = ""
     @Published var useManualStartingPosition: Bool = false
+    @Published var audiobooks: [AudiobookEntry] = []
+    @Published var isLoadingAudiobooks = false
 
     private var latestPipeline: PipelineResponse?
     private var benchmarkTimeline: BenchmarkTimeline?
@@ -67,35 +69,13 @@ final class ContentViewModel: ObservableObject {
             }
 
             log("Downloading audio preview for chunk \(response.chunkId)...")
-            let fileURL = try await client.downloadChunkAudio(
-                sessionId: sessionId,
+            try await configurePlayer(
                 asin: response.asin,
-                chunkId: response.chunkId
+                chunkId: response.chunkId,
+                title: sessionStore.bookDetails?.title ?? "Kindle Audio Preview",
+                coverImageURL: sessionStore.bookDetails?.coverImage
             )
-
-            let benchmarks = try await client.fetchBenchmarks(
-                sessionId: sessionId,
-                asin: response.asin,
-                chunkId: response.chunkId
-            )
-
-            let timeline = BenchmarkTimeline(response: benchmarks)
-
-            downloadedAudioURL = fileURL
-            benchmarkTimeline = timeline
-            let title = sessionStore.bookDetails?.title ?? "Kindle Audio Preview"
-            let coverImageURL = sessionStore.bookDetails?.coverImage
-            playbackCoordinator.configure(
-                audioURL: fileURL,
-                title: title,
-                coverImageURL: coverImageURL,
-                timeline: timeline,
-                client: client,
-                sessionId: sessionId,
-                asin: response.asin
-            )
-            log("Audio preview saved to \(fileURL.lastPathComponent).")
-            log("Loaded \(timeline.checkpoints.count) benchmark checkpoints.")
+            log("Audio ready for playback.")
         } catch {
             logError(error)
         }
@@ -127,6 +107,49 @@ final class ContentViewModel: ObservableObject {
             log("Book details loaded: \(response.title)")
         } catch {
             isLoadingBookDetails = false
+            logError(error)
+        }
+    }
+
+    /** Fetches the list of generated audiobooks from the server. */
+    func fetchAudiobooks() async {
+        isLoadingAudiobooks = true
+        defer { isLoadingAudiobooks = false }
+
+        do {
+            let client = try makeClient()
+            audiobooks = try await client.fetchAudiobooks()
+            log("Loaded \(audiobooks.count) audiobook(s)")
+        } catch {
+            log("Failed to load audiobooks: \(error.localizedDescription)")
+        }
+    }
+
+    /** Deletes an audiobook from the server. */
+    func deleteAudiobook(_ entry: AudiobookEntry) async {
+        do {
+            let client = try makeClient()
+            try await client.deleteAudiobook(asin: entry.asin, chunkId: entry.chunkId)
+            audiobooks.removeAll { $0.id == entry.id }
+            log("Deleted audiobook: \(entry.bookTitle ?? entry.asin)")
+        } catch {
+            log("Failed to delete audiobook: \(error.localizedDescription)")
+        }
+    }
+
+    /** Loads an existing audiobook into the player. */
+    func playAudiobook(_ entry: AudiobookEntry) async {
+        resetAudioPlaybackState()
+        log("Loading: \(entry.bookTitle ?? entry.asin)...")
+        do {
+            try await configurePlayer(
+                asin: entry.asin,
+                chunkId: entry.chunkId,
+                title: entry.bookTitle ?? "Kindle Audio Preview",
+                coverImageURL: entry.coverImage
+            )
+            log("Loaded audiobook")
+        } catch {
             logError(error)
         }
     }
@@ -164,6 +187,39 @@ final class ContentViewModel: ObservableObject {
     }
 
     // MARK: - Private
+
+    /** Downloads audio and benchmarks, then configures the playback coordinator. */
+    private func configurePlayer(asin: String, chunkId: String, title: String, coverImageURL: String?) async throws {
+        let client = try makeClient()
+
+        let fileURL = try await client.downloadChunkAudio(asin: asin, chunkId: chunkId)
+        let benchmarks = try await client.fetchBenchmarks(asin: asin, chunkId: chunkId)
+        let timeline = BenchmarkTimeline(response: benchmarks)
+
+        downloadedAudioURL = fileURL
+        benchmarkTimeline = timeline
+
+        let hasGuid = sessionStore.guid?.trimmedNonEmpty() != nil
+        if hasGuid {
+            let sessionId = try await sessionService.ensureSession(client: client)
+            playbackCoordinator.configure(
+                audioURL: fileURL,
+                title: title,
+                coverImageURL: coverImageURL,
+                timeline: timeline,
+                client: client,
+                sessionId: sessionId,
+                asin: asin
+            )
+        } else {
+            playbackCoordinator.configure(
+                audioURL: fileURL,
+                title: title,
+                coverImageURL: coverImageURL,
+                timeline: timeline
+            )
+        }
+    }
 
     private func makeClient() throws -> APIClient {
         guard let baseURL = resolveBaseURL() else {

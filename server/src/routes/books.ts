@@ -1,5 +1,9 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+
 import type { FastifyInstance } from "fastify";
 
+import { env } from "../config/env.js";
 import type { SessionStore } from "../session-store.js";
 import { serializeBookDetails } from "../utils/serializers.js";
 import { requireSession } from "../utils/auth.js";
@@ -51,11 +55,31 @@ export async function registerBooksRoutes(
       const fullDetails = await session.kindle.fullBookDetails(book);
       request.log.info({ asin, title: fullDetails.title }, "Book details fetched");
 
+      // Save book info for offline access by audiobooks endpoint
+      await saveBookInfo(asin, {
+        title: fullDetails.title,
+        coverImage: fullDetails.largeCoverUrl,
+        length: fullDetails.endPosition,
+      });
+
       // Serialize and return the response
       const response = serializeBookDetails(fullDetails);
 
       return reply.send(response);
     }
   );
+}
 
+type BookInfo = {
+  title: string;
+  coverImage: string;
+  length: number;
+};
+
+/** Saves book info to disk for use by the audiobooks listing. */
+async function saveBookInfo(asin: string, info: BookInfo): Promise<void> {
+  const asinDir = path.join(env.storageDir, asin);
+  await fs.mkdir(asinDir, { recursive: true });
+  const bookInfoPath = path.join(asinDir, "book-info.json");
+  await fs.writeFile(bookInfoPath, JSON.stringify(info, null, 2), "utf8");
 }

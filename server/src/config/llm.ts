@@ -3,7 +3,7 @@ export type OpenAIConfig = {
   temperature: number;
 };
 
-const DEFAULT_MODEL = "gpt-5-mini-2025-08-07";
+const DEFAULT_MODEL = "gpt-5-nano-2025-08-07";
 const DEFAULT_TEMPERATURE = 1;
 
 let cachedConfig: OpenAIConfig | undefined;

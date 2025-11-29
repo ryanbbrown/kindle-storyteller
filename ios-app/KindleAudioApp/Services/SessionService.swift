@@ -44,22 +44,13 @@ final class SessionService {
         guard let deviceToken = sessionStore.deviceToken?.trimmedNonEmpty() else {
             throw ValidationError.missing("device token")
         }
-        guard let renderingToken = sessionStore.renderingToken?.trimmedNonEmpty() else {
-            throw ValidationError.missing("rendering token")
-        }
-        guard let rendererRevision = sessionStore.rendererRevision?.trimmedNonEmpty() else {
-            throw ValidationError.missing("renderer revision")
-        }
-        guard let guid = sessionStore.guid?.trimmedNonEmpty() else {
-            throw ValidationError.missing("GUID")
-        }
 
         return SessionRequest(
             cookieString: cookieString,
             deviceToken: deviceToken,
-            renderingToken: renderingToken,
-            rendererRevision: rendererRevision,
-            guid: guid,
+            renderingToken: sessionStore.renderingToken?.trimmedNonEmpty(),
+            rendererRevision: sessionStore.rendererRevision?.trimmedNonEmpty(),
+            guid: sessionStore.guid?.trimmedNonEmpty(),
             tlsServerUrl: nil,
             tlsApiKey: nil
         )
@@ -72,15 +63,6 @@ final class SessionService {
         }
         guard sessionStore.deviceToken?.trimmedNonEmpty() != nil else {
             return .missing(field: "device token", guidance: loginRefreshMessage(reason: "Device token is missing."))
-        }
-        guard sessionStore.renderingToken?.trimmedNonEmpty() != nil else {
-            return .missing(field: "rendering token", guidance: loginRefreshMessage(reason: "Rendering token is missing."))
-        }
-        guard sessionStore.rendererRevision?.trimmedNonEmpty() != nil else {
-            return .missing(field: "renderer revision", guidance: loginRefreshMessage(reason: "Renderer revision is missing."))
-        }
-        guard sessionStore.guid?.trimmedNonEmpty() != nil else {
-            return .missing(field: "GUID", guidance: loginRefreshMessage(reason: "GUID is missing."))
         }
         return .valid
     }

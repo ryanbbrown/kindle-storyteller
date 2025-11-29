@@ -4,8 +4,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { env } from "../config/env.js";
-import type { SessionStore } from "../session-store.js";
-import { requireSession } from "../utils/auth.js";
 
 type ChunkAudioParams = {
   asin: string;
@@ -13,18 +11,10 @@ type ChunkAudioParams = {
 };
 
 /** Registers routes for streaming chunk audio files. */
-export async function registerChunkAudioRoutes(
-  app: FastifyInstance,
-  store: SessionStore
-): Promise<void> {
+export async function registerChunkAudioRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Params: ChunkAudioParams }>(
     "/books/:asin/chunks/:chunkId/audio",
     async (request, reply) => {
-      const session = requireSession(store, request, reply);
-      if (!session) {
-        return;
-      }
-
       const asin = request.params.asin?.trim();
       const chunkId = request.params.chunkId?.trim();
 

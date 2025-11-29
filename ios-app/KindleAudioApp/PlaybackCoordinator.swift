@@ -5,6 +5,9 @@ import Foundation
 final class PlaybackCoordinator: ObservableObject {
     let audioController = AudioPlaybackController()
     @Published private(set) var progressErrorMessage: String?
+    @Published private(set) var isSyncDisabled = false
+    @Published private(set) var currentTitle: String?
+    @Published private(set) var currentCoverImageURL: String?
 
     private var scheduler: ProgressUpdateScheduler?
     private var cancellables: Set<AnyCancellable> = []
@@ -21,12 +24,30 @@ final class PlaybackCoordinator: ObservableObject {
         audioURL: URL,
         title: String,
         coverImageURL: String? = nil,
+        timeline: BenchmarkTimeline
+    ) {
+        scheduler?.stop()
+        scheduler = nil
+        isSyncDisabled = true
+        currentTitle = title
+        currentCoverImageURL = coverImageURL
+        audioController.load(url: audioURL, title: title, coverImageURL: coverImageURL)
+    }
+
+    func configure(
+        audioURL: URL,
+        title: String,
+        coverImageURL: String? = nil,
         timeline: BenchmarkTimeline,
         client: APIClient,
         sessionId: String,
         asin: String
     ) {
         scheduler?.stop()
+        isSyncDisabled = false
+        currentTitle = title
+        currentCoverImageURL = coverImageURL
+
         scheduler = ProgressUpdateScheduler(
             checkpoints: timeline.checkpoints,
             client: client,

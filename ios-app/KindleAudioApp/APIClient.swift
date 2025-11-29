@@ -41,17 +41,16 @@ struct APIClient {
         )
     }
 
-    func fetchBenchmarks(sessionId: String, asin: String, chunkId: String) async throws -> BenchmarkResponse {
+    func fetchBenchmarks(asin: String, chunkId: String) async throws -> BenchmarkResponse {
         let encodedASIN = asin.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? asin
         let encodedChunk = chunkId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? chunkId
         return try await send(
             path: "books/\(encodedASIN)/chunks/\(encodedChunk)/benchmarks",
-            method: "GET",
-            headers: ["Authorization": "Bearer \(sessionId)"]
+            method: "GET"
         )
     }
 
-    func downloadChunkAudio(sessionId: String, asin: String, chunkId: String) async throws -> URL {
+    func downloadChunkAudio(asin: String, chunkId: String) async throws -> URL {
         let encodedASIN = asin.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? asin
         let encodedChunk = chunkId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? chunkId
 
@@ -61,7 +60,6 @@ struct APIClient {
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        request.setValue("Bearer \(sessionId)", forHTTPHeaderField: "Authorization")
         request.setValue(apiKey, forHTTPHeaderField: "X-API-Key")
 
         let (tempURL, response) = try await urlSession.download(for: request)
@@ -91,6 +89,21 @@ struct APIClient {
 
         try fileManager.moveItem(at: tempURL, to: destination)
         return destination
+    }
+
+    /** Fetches the list of generated audiobooks from the server. */
+    func fetchAudiobooks() async throws -> [AudiobookEntry] {
+        return try await send(path: "audiobooks", method: "GET")
+    }
+
+    /** Deletes an audiobook from the server. */
+    func deleteAudiobook(asin: String, chunkId: String) async throws {
+        let encodedASIN = asin.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? asin
+        let encodedChunk = chunkId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? chunkId
+        let _: EmptyResponse = try await send(
+            path: "audiobooks/\(encodedASIN)/\(encodedChunk)",
+            method: "DELETE"
+        )
     }
 
     func updateProgress(sessionId: String, asin: String, position: Int) async throws -> UpdateProgressResponse {
@@ -141,7 +154,6 @@ struct APIClient {
         }
 
         let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
         if data.isEmpty {
             if Response.self == EmptyResponse.self, let empty = EmptyResponse() as? Response {
                 return empty
