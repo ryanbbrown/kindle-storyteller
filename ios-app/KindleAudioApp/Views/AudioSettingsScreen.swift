@@ -4,8 +4,6 @@ struct AudioSettingsScreen: View {
     var bookDetails: BookDetails?
     @Binding var selectedProvider: String
     @Binding var llmPreprocessing: Bool
-    @Binding var placeholderToggle1: Bool
-    @Binding var placeholderToggle2: Bool
     var onGenerate: () -> Void
 
     var body: some View {
@@ -91,11 +89,7 @@ struct AudioSettingsScreen: View {
 
             providerPicker
 
-            VStack(spacing: 16) {
-                Toggle("LLM preprocessing", isOn: $llmPreprocessing)
-                Toggle("Include chapter breaks", isOn: $placeholderToggle1)
-                Toggle("Normalize audio", isOn: $placeholderToggle2)
-            }
+            Toggle("LLM preprocessing", isOn: $llmPreprocessing)
 
             Button(action: onGenerate) {
                 Label("Generate Audiobook", systemImage: "waveform.badge.plus")

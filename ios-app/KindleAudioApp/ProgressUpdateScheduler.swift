@@ -65,10 +65,22 @@ final class ProgressUpdateScheduler: NSObject {
         displayLink = nil
     }
 
+    /** Updates the checkpoint index to match the current playback position after a seek. */
+    func syncToCurrentTime() {
+        let currentTime = currentTimeProvider()
+
+        // Find the first checkpoint that hasn't been reached yet
+        let newIndex = checkpoints.firstIndex { $0.time > currentTime } ?? checkpoints.count
+
+        nextCheckpointIndex = newIndex
+        pendingCheckpoint = nil
+        retryAvailableAt = nil
+    }
+
     @objc private func handleDisplayLink(_ link: CADisplayLink) {
         guard !isSendingUpdate else { return }
 
-        guard var context = pendingCheckpoint ?? makeCheckpointContext() else {
+        guard let context = pendingCheckpoint ?? makeCheckpointContext() else {
             stop()
             return
         }
@@ -131,10 +143,10 @@ final class ProgressUpdateScheduler: NSObject {
 
     private func errorMessage(for error: Error) -> String {
         if let schedulerError = error as? SchedulerError {
-            return schedulerError.localizedDescription ?? "Progress update failed."
+            return schedulerError.localizedDescription
         }
         if let apiError = error as? APIError {
-            return apiError.localizedDescription ?? "Progress update failed."
+            return apiError.localizedDescription
         }
         return error.localizedDescription
     }

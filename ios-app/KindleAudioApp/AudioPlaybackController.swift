@@ -18,6 +18,8 @@ final class AudioPlaybackController: NSObject, ObservableObject, AVAudioPlayerDe
     @Published private(set) var errorMessage: String?
     @Published private(set) var playbackState: PlaybackState = .idle
 
+    var onSeek: (() -> Void)?
+
     private var player: AVAudioPlayer?
     private var nowPlayingTitle: String?
     private var nowPlayingArtwork: MPMediaItemArtwork?
@@ -110,6 +112,7 @@ final class AudioPlaybackController: NSObject, ObservableObject, AVAudioPlayerDe
         let newTime = min(player.currentTime + seconds, player.duration)
         player.currentTime = newTime
         updateNowPlayingInfo(playbackRate: isPlaying ? 1 : 0)
+        onSeek?()
     }
 
     func skipBackward(seconds: TimeInterval = 10) {
@@ -117,6 +120,7 @@ final class AudioPlaybackController: NSObject, ObservableObject, AVAudioPlayerDe
         let newTime = max(player.currentTime - seconds, 0)
         player.currentTime = newTime
         updateNowPlayingInfo(playbackRate: isPlaying ? 1 : 0)
+        onSeek?()
     }
 
     /** Seeks to a specific time position in the audio. */
@@ -124,6 +128,7 @@ final class AudioPlaybackController: NSObject, ObservableObject, AVAudioPlayerDe
         guard let player = player else { return }
         player.currentTime = max(0, min(time, player.duration))
         updateNowPlayingInfo(playbackRate: isPlaying ? 1 : 0)
+        onSeek?()
     }
 
     func reset() {
@@ -189,6 +194,7 @@ final class AudioPlaybackController: NSObject, ObservableObject, AVAudioPlayerDe
                 }
                 player.currentTime = ev.positionTime
                 self.updateNowPlayingInfo(playbackRate: player.isPlaying ? 1 : 0)
+                self.onSeek?()
                 return .success
             }
         }

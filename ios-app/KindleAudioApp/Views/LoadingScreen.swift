@@ -23,6 +23,7 @@ struct LoadingScreen: View {
     var body: some View {
         VStack(spacing: 32) {
             Spacer()
+                .frame(maxHeight: .infinity)
 
             if isComplete {
                 Image(systemName: "checkmark.circle.fill")
@@ -32,8 +33,10 @@ struct LoadingScreen: View {
             } else {
                 ProgressView()
                     .scaleEffect(2)
+            }
 
-                VStack(spacing: 12) {
+            VStack(spacing: 12) {
+                if !isComplete {
                     ForEach(0...currentStepIndex, id: \.self) { index in
                         HStack(spacing: 8) {
                             if index < currentStepIndex {
@@ -51,10 +54,12 @@ struct LoadingScreen: View {
                         .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }
-                .animation(.easeInOut(duration: 0.3), value: currentStepIndex)
             }
+            .frame(minHeight: 150, alignment: .top)
+            .animation(.easeInOut(duration: 0.3), value: currentStepIndex)
 
             Spacer()
+                .frame(maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.easeInOut, value: isComplete)

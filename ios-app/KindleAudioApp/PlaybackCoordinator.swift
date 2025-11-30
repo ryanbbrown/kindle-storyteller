@@ -61,6 +61,10 @@ final class PlaybackCoordinator: ObservableObject {
             self?.progressErrorMessage = message
         }
 
+        audioController.onSeek = { [weak self] in
+            self?.scheduler?.syncToCurrentTime()
+        }
+
         audioController.load(url: audioURL, title: title, coverImageURL: coverImageURL)
     }
 

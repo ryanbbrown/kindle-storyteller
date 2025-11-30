@@ -293,13 +293,13 @@ final class ContentViewModel: ObservableObject {
 
     private func logError(_ error: Error) {
         if let validation = error as? ValidationError {
-            log("Error: \(validation.localizedDescription ?? "Unknown")")
+            log("Error: \(validation.localizedDescription)")
             presentAlert(title: "Missing Information", message: validation.guidanceMessage)
             return
         }
 
         if let apiError = error as? APIError {
-            log("Error: \(apiError.localizedDescription ?? "Unknown")")
+            log("Error: \(apiError.localizedDescription)")
             let classification = sessionService.classifyError(apiError)
             switch classification {
             case .sessionExpired(let reason):

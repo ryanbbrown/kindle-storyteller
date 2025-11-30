@@ -9,8 +9,6 @@ struct ContentView: View {
     @State private var showLoginHint = false
     @State private var hasShownLoginHint = false
     @State private var isGenerationComplete = false
-    @State private var placeholderToggle1 = false
-    @State private var placeholderToggle2 = false
 
     init(sessionStore: SessionStore) {
         self.sessionStore = sessionStore
@@ -28,8 +26,6 @@ struct ContentView: View {
                         bookDetails: sessionStore.bookDetails,
                         selectedProvider: $viewModel.selectedAudioProvider,
                         llmPreprocessing: $viewModel.useLlmPreprocessing,
-                        placeholderToggle1: $placeholderToggle1,
-                        placeholderToggle2: $placeholderToggle2,
                         onGenerate: startGeneration
                     )
                 case .loading:

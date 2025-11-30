@@ -60,6 +60,14 @@ struct PlayerScreen: View {
                 .padding(.horizontal, 24)
                 .padding(.bottom, 32)
 
+            if coordinator.isSyncDisabled {
+                Label("Sync disabled – select this book in Kindle web to enable", systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 16)
+            }
+
             if audioController.isReady, audioController.duration > 0 {
                 progressSection
                     .padding(.horizontal, 24)
