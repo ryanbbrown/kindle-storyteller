@@ -41,20 +41,20 @@ struct APIClient {
         )
     }
 
-    func fetchBenchmarks(asin: String, chunkId: String) async throws -> BenchmarkResponse {
+    func fetchBenchmarks(asin: String, chunkId: String, provider: String) async throws -> BenchmarkResponse {
         let encodedASIN = asin.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? asin
         let encodedChunk = chunkId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? chunkId
         return try await send(
-            path: "books/\(encodedASIN)/chunks/\(encodedChunk)/benchmarks",
+            path: "books/\(encodedASIN)/chunks/\(encodedChunk)/benchmarks?provider=\(provider)",
             method: "GET"
         )
     }
 
-    func downloadChunkAudio(asin: String, chunkId: String) async throws -> URL {
+    func downloadChunkAudio(asin: String, chunkId: String, provider: String) async throws -> URL {
         let encodedASIN = asin.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? asin
         let encodedChunk = chunkId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? chunkId
 
-        guard let url = URL(string: "books/\(encodedASIN)/chunks/\(encodedChunk)/audio", relativeTo: baseURL)?.absoluteURL else {
+        guard let url = URL(string: "books/\(encodedASIN)/chunks/\(encodedChunk)/audio?provider=\(provider)", relativeTo: baseURL)?.absoluteURL else {
             throw APIError(statusCode: -1, message: "Invalid audio URL")
         }
 
@@ -81,7 +81,7 @@ struct APIClient {
 
         let sanitizedAsin = sanitizeFilenameComponent(asin)
         let sanitizedChunk = sanitizeFilenameComponent(chunkId)
-        let destination = audioDir.appendingPathComponent("\(sanitizedAsin)_\(sanitizedChunk).mp3")
+        let destination = audioDir.appendingPathComponent("\(sanitizedAsin)_\(sanitizedChunk)_\(provider).mp3")
 
         if fileManager.fileExists(atPath: destination.path) {
             try fileManager.removeItem(at: destination)
@@ -97,11 +97,11 @@ struct APIClient {
     }
 
     /** Deletes an audiobook from the server. */
-    func deleteAudiobook(asin: String, chunkId: String) async throws {
+    func deleteAudiobook(asin: String, chunkId: String, provider: String) async throws {
         let encodedASIN = asin.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? asin
         let encodedChunk = chunkId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? chunkId
         let _: EmptyResponse = try await send(
-            path: "audiobooks/\(encodedASIN)/\(encodedChunk)",
+            path: "audiobooks/\(encodedASIN)/\(encodedChunk)?provider=\(provider)",
             method: "DELETE"
         )
     }

@@ -88,10 +88,10 @@ export async function generateChunkPreviewAudio(
 
   const audioDir = path.join(chunkDir, "audio");
   await fs.mkdir(audioDir, { recursive: true });
-  const wavPath = path.join(audioDir, "audio.wav");
-  const audioPath = path.join(audioDir, "audio.mp3");
-  const alignmentPath = path.join(audioDir, "alignment.json");
-  const benchmarksPath = path.join(audioDir, "benchmarks.json");
+  const wavPath = path.join(audioDir, "cartesia-audio.wav");
+  const audioPath = path.join(audioDir, "cartesia-audio.mp3");
+  const alignmentPath = path.join(audioDir, "cartesia-alignment.json");
+  const benchmarksPath = path.join(audioDir, "cartesia-benchmarks.json");
 
   await fs.writeFile(wavPath, audioBuffer);
   await execFileAsync("ffmpeg", ["-y", "-i", wavPath, "-codec:a", "libmp3lame", "-qscale:a", "2", audioPath]);

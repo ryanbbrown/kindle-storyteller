@@ -4,6 +4,8 @@ import path from "node:path";
 import type { FastifyInstance } from "fastify";
 
 import { env } from "../config/env.js";
+import { readBookMetadata } from "../services/chunk-metadata-service.js";
+import type { TtsProvider } from "../types/chunk-metadata.js";
 
 type AudiobookEntry = {
   asin: string;
@@ -12,7 +14,7 @@ type AudiobookEntry = {
   coverImage: string | null;
   startPercent: number;
   durationSeconds: number;
-  ttsProvider: string;
+  ttsProvider: TtsProvider;
 };
 
 type BookInfo = {
@@ -28,6 +30,10 @@ type DeleteParams = {
   chunkId: string;
 };
 
+type DeleteQuery = {
+  provider: TtsProvider;
+};
+
 /** Registers routes for listing generated audiobooks. */
 export async function registerAudiobooksRoutes(
   app: FastifyInstance,
@@ -39,24 +45,39 @@ export async function registerAudiobooksRoutes(
     return reply.status(200).send(entries);
   });
 
-  app.delete<{ Params: DeleteParams }>("/audiobooks/:asin/:chunkId", async (request, reply) => {
+  app.delete<{ Params: DeleteParams; Querystring: DeleteQuery }>("/audiobooks/:asin/:chunkId", async (request, reply) => {
     const { asin, chunkId } = request.params;
-    request.log.info({ asin, chunkId }, "Deleting audiobook");
+    const provider = request.query.provider;
+
+    if (!provider || (provider !== "cartesia" && provider !== "elevenlabs")) {
+      return reply
+        .status(400)
+        .send({ message: "provider query param is required (cartesia or elevenlabs)" } as never);
+    }
+
+    request.log.info({ asin, chunkId, provider }, "Deleting audiobook");
 
     const audioDir = path.join(env.storageDir, asin, "chunks", chunkId, "audio");
 
     try {
-      await fs.rm(audioDir, { recursive: true, force: true });
-      request.log.info({ asin, chunkId }, "Audiobook deleted");
+      const files = [
+        `${provider}-audio.mp3`,
+        `${provider}-alignment.json`,
+        `${provider}-benchmarks.json`,
+      ];
+      await Promise.all(
+        files.map((f) => fs.rm(path.join(audioDir, f), { force: true }))
+      );
+      request.log.info({ asin, chunkId, provider }, "Audiobook deleted");
       return reply.status(204).send();
     } catch (error) {
-      request.log.error({ err: error, asin, chunkId }, "Failed to delete audiobook");
+      request.log.error({ err: error, asin, chunkId, provider }, "Failed to delete audiobook");
       return reply.status(500).send({ message: "Failed to delete audiobook" } as never);
     }
   });
 }
 
-/** Scans data/books/{asin}/chunks/{chunkId}/audio/benchmarks.json to build the audiobook list. */
+/** Scans ASIN-level metadata to build the audiobook list. Returns one entry per (chunk, provider) pair. */
 async function scanAudiobooks(): Promise<AudiobookEntry[]> {
   const entries: AudiobookEntry[] = [];
 
@@ -73,41 +94,36 @@ async function scanAudiobooks(): Promise<AudiobookEntry[]> {
     if (!stat?.isDirectory()) continue;
 
     const bookInfo = await readBookInfo(asinPath);
+    const metadata = await readBookMetadata(asin);
+    if (!metadata) continue;
 
-    const chunksPath = path.join(asinPath, "chunks");
-    let chunkDirs: string[];
-    try {
-      chunkDirs = await fs.readdir(chunksPath);
-    } catch {
-      continue;
-    }
+    for (const range of metadata.ranges) {
+      if (!range.artifacts.audio) continue;
 
-    for (const chunkId of chunkDirs) {
-      const chunkPath = path.join(chunksPath, chunkId);
-      const chunkStat = await fs.stat(chunkPath).catch(() => null);
-      if (!chunkStat?.isDirectory()) continue;
+      for (const [provider, audio] of Object.entries(range.artifacts.audio)) {
+        if (!audio?.benchmarksPath) continue;
 
-      const benchmarksPath = path.join(chunkPath, "audio", "benchmarks.json");
-      try {
-        const raw = await fs.readFile(benchmarksPath, "utf8");
-        const benchmarks = JSON.parse(raw);
+        try {
+          const raw = await fs.readFile(audio.benchmarksPath, "utf8");
+          const benchmarks = JSON.parse(raw);
 
-        const startPositionId = parseStartPositionFromChunkId(chunkId);
-        const startPercent = bookInfo?.length
-          ? (startPositionId / bookInfo.length) * 100
-          : 0;
+          const startPositionId = range.start.positionId;
+          const startPercent = bookInfo?.length
+            ? (startPositionId / bookInfo.length) * 100
+            : 0;
 
-        entries.push({
-          asin: benchmarks.asin ?? asin,
-          chunkId: benchmarks.chunkId ?? chunkId,
-          bookTitle: bookInfo?.title ?? null,
-          coverImage: bookInfo?.coverImage ?? null,
-          startPercent,
-          durationSeconds: benchmarks.totalDurationSeconds ?? 0,
-          ttsProvider: benchmarks.ttsProvider ?? "unknown",
-        });
-      } catch {
-        // No benchmarks.json or invalid, skip
+          entries.push({
+            asin,
+            chunkId: range.id,
+            bookTitle: bookInfo?.title ?? null,
+            coverImage: bookInfo?.coverImage ?? null,
+            startPercent,
+            durationSeconds: benchmarks.totalDurationSeconds ?? 0,
+            ttsProvider: provider as TtsProvider,
+          });
+        } catch {
+          // Benchmarks file missing or invalid, skip
+        }
       }
     }
   }
@@ -123,10 +139,4 @@ async function readBookInfo(asinPath: string): Promise<BookInfo | null> {
   } catch {
     return null;
   }
-}
-
-/** Extracts start position ID from chunk ID format: chunk_pid_START_END */
-function parseStartPositionFromChunkId(chunkId: string): number {
-  const match = chunkId.match(/chunk_pid_(\d+)_\d+/);
-  return match ? parseInt(match[1], 10) : 0;
 }

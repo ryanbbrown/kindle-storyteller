@@ -1,7 +1,7 @@
 /**
  * - runChunkPipeline: exported entry that calls determineSteps, ensureChunkDownloaded, runChunkOcr, and generateChunkPreviewAudio.
  * - determineSteps: plans required stages by leveraging findExistingChunk, resolveArtifacts, and statMatches checks.
- *   - findExistingChunk: scans stored chunk metadata via readChunkMetadata and selectMatchingRange to find coverage ranges.
+ *   - findExistingChunk: scans stored ASIN-level metadata via readBookMetadata and selectMatchingRange to find coverage ranges.
  *   - selectMatchingRange: matches requested Kindle positionIds to metadata ranges for determineSteps.
  * - resolveChunkPositionRange: exposes coverage metadata so clients know which positionIds a chunk spans.
  * - statMatches: shared helper letting determineSteps probe cached artifacts without duplicating fs try/catch logic.
@@ -26,12 +26,13 @@ import {
 } from "./tts/index.js";
 import { transformTextForTTS } from "./llm.js";
 import type { ChunkAudioSummary } from "../types/audio.js";
-import { readChunkMetadata } from "./chunk-metadata-service.js";
+import { readBookMetadata } from "./chunk-metadata-service.js";
 import { openBenchmarkPayload } from "../utils/benchmarks.js";
 import { env } from "../config/env.js";
 import type {
   CoverageRange,
   RendererCoverageMetadata,
+  TtsProvider,
 } from "../types/chunk-metadata.js";
 
 type PipelineStep = "download" | "ocr" | "llm" | "audio";
@@ -99,7 +100,6 @@ export async function runChunkPipeline(
       asin: downloadResult.asin,
       chunkId: downloadResult.chunkId,
       chunkDir: downloadResult.chunkDir,
-      metadataPath: downloadResult.metadataPath,
       metadata: downloadResult.chunkMetadata,
       artifacts: downloadResult.artifacts,
     };
@@ -126,10 +126,10 @@ export async function runChunkPipeline(
     log.info({ chunkId: activeChunk.chunkId }, "Running text extraction");
     executedSteps.push("ocr");
     ocrResult = await runChunkOcr({
+      asin: activeChunk.asin,
       chunkId: activeChunk.chunkId,
       chunkDir: activeChunk.chunkDir,
       extractDir: activeChunk.artifacts.extractDir,
-      metadataPath: activeChunk.metadataPath,
       startPage: 0,
       maxPages: DEFAULT_OCR_MAX_PAGES,
     });
@@ -175,16 +175,20 @@ export async function runChunkPipeline(
     });
 
     await recordChunkAudioArtifacts({
-      metadataPath: activeChunk.metadataPath,
-      metadata: activeChunk.metadata,
+      asin: activeChunk.asin,
       chunkId: activeChunk.chunkId,
+      provider: options.audioProvider,
       summary: audioResult,
     });
 
-    activeChunk.artifacts.audioPath = audioResult.audioPath;
-    activeChunk.artifacts.audioAlignmentPath = audioResult.alignmentPath;
-    activeChunk.artifacts.audioBenchmarksPath =
-      audioResult.benchmarksPath;
+    if (!activeChunk.artifacts.audio) {
+      activeChunk.artifacts.audio = {};
+    }
+    activeChunk.artifacts.audio[options.audioProvider] = {
+      audioPath: audioResult.audioPath,
+      alignmentPath: audioResult.alignmentPath,
+      benchmarksPath: audioResult.benchmarksPath,
+    };
     audioDurationSeconds = audioResult.totalDurationSeconds;
     log.info({ durationSeconds: audioDurationSeconds }, "Audio generation complete");
   }
@@ -194,6 +198,7 @@ export async function runChunkPipeline(
       const benchmarks = await openBenchmarkPayload(
         activeChunk.asin,
         activeChunk.chunkId,
+        options.audioProvider,
       );
       audioDurationSeconds = benchmarks.totalDurationSeconds;
     } catch {
@@ -239,7 +244,6 @@ type LoadedChunk = {
   asin: string;
   chunkId: string;
   chunkDir: string;
-  metadataPath: string;
   metadata: RendererCoverageMetadata;
   artifacts: ChunkArtifacts;
 };
@@ -255,7 +259,6 @@ type StepPlan = {
 type ExistingChunk = {
   chunkId: string;
   chunkDir: string;
-  metadataPath: string;
   metadata: RendererCoverageMetadata;
   range: CoverageRange;
 };
@@ -287,7 +290,6 @@ async function determineSteps(options: {
     asin: options.asin,
     chunkId: existing.chunkId,
     chunkDir: existing.chunkDir,
-    metadataPath: existing.metadataPath,
     metadata: existing.metadata,
     artifacts,
   };
@@ -315,8 +317,9 @@ async function determineSteps(options: {
     ? true
     : await statMatches(providerContentPath, (stats) => stats.isFile());
 
-  const hasAudio = artifacts.audioPath
-    ? await statMatches(artifacts.audioPath, (stats) => stats.isFile())
+  const providerAudio = artifacts.audio?.[options.audioProvider];
+  const hasAudio = providerAudio?.audioPath
+    ? await statMatches(providerAudio.audioPath, (stats) => stats.isFile())
     : false;
 
   return {
@@ -333,45 +336,29 @@ async function findExistingChunk(options: {
   asin: string;
   requestPositionId: number;
 }): Promise<ExistingChunk | undefined> {
+  const metadata = await readBookMetadata(options.asin);
+  if (!metadata) {
+    return undefined;
+  }
+
+  const range = selectMatchingRange({
+    metadata,
+    requestPositionId: options.requestPositionId,
+  });
+  if (!range) {
+    return undefined;
+  }
+
   const asinDir = path.join(env.storageDir, options.asin);
   const chunksRoot = path.join(asinDir, "chunks");
+  const chunkDir = path.join(chunksRoot, range.id);
 
-  let entries: string[];
-  try {
-    entries = await fs.readdir(chunksRoot);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return undefined;
-    }
-    throw error;
-  }
-
-  for (const entry of entries) {
-    const chunkDir = path.join(chunksRoot, entry);
-    const metadataPath = path.join(chunkDir, "metadata.json");
-    const metadata = await readChunkMetadata(metadataPath);
-    if (!metadata) {
-      continue;
-    }
-
-    const range = selectMatchingRange({
-      metadata,
-      requestPositionId: options.requestPositionId,
-    });
-    if (!range) {
-      continue;
-    }
-
-    return {
-      chunkId: entry,
-      chunkDir,
-      metadataPath,
-      metadata,
-      range,
-    };
-  }
-
-  return undefined;
+  return {
+    chunkId: range.id,
+    chunkDir,
+    metadata,
+    range,
+  };
 }
 
 /** Locates the coverage range matching the requested Kindle position metadata. */

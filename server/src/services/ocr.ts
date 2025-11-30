@@ -2,7 +2,7 @@
  * - runChunkOcr: exported entry that invokes executeOcrPipeline and reuses its output for callers.
  * - executeOcrPipeline: tries uv/python commands, parses stdout via parseSummary, flattens files with reorganizePages, and persists results via updateChunkMetadata.
  * - reorganizePages: reshapes glyph output into a flat pages directory consumed by runChunkOcr callers.
- * - updateChunkMetadata: writes OCR artifact paths back to metadata for later stages.
+ * - updateChunkMetadata: writes OCR artifact paths back to ASIN-level metadata for later stages.
  * - parseSummary: interprets JSON emitted by the OCR pipeline before executeOcrPipeline processes it.
  */
 import { execFile } from "node:child_process";
@@ -13,8 +13,8 @@ import { promisify } from "node:util";
 
 import { log } from "../logger.js";
 import {
-  readChunkMetadata,
-  writeChunkMetadata,
+  readBookMetadata,
+  upsertRange,
 } from "./chunk-metadata-service.js";
 
 const execFileAsync = promisify(execFile);
@@ -36,10 +36,10 @@ type PipelineSummary = {
 };
 
 export type RunChunkOcrOptions = {
+  asin: string;
   chunkId: string;
   chunkDir: string;
   extractDir: string;
-  metadataPath: string;
   startPage?: number;
   maxPages?: number;
 };
@@ -57,19 +57,19 @@ export async function runChunkOcr(
   options: RunChunkOcrOptions
 ): Promise<RunChunkOcrResult> {
   const {
+    asin,
     chunkId,
     chunkDir,
     extractDir,
-    metadataPath,
     startPage = 0,
     maxPages = 5,
   } = options;
 
   const result = await executeOcrPipeline({
+    asin,
     chunkId,
     chunkDir,
     extractDir,
-    metadataPath,
     startPage,
     maxPages,
   });
@@ -79,18 +79,18 @@ export async function runChunkOcr(
 
 /** Invokes the python OCR pipeline and reshapes the resulting artifacts. */
 async function executeOcrPipeline(options: {
+  asin: string;
   chunkId: string;
   chunkDir: string;
   extractDir: string;
-  metadataPath: string;
   startPage: number;
   maxPages: number;
 }): Promise<RunChunkOcrResult> {
   const {
+    asin,
     chunkId,
     chunkDir,
     extractDir,
-    metadataPath,
     startPage,
     maxPages,
   } = options;
@@ -124,7 +124,7 @@ async function executeOcrPipeline(options: {
   };
 
   await updateChunkMetadata({
-    metadataPath,
+    asin,
     chunkId,
     pagesDir: path.join(chunkDir, "pages"),
     combinedTextPath,
@@ -194,15 +194,15 @@ async function reorganizePages(
   return result;
 }
 
-/** Writes OCR artifact locations back into the chunk metadata file. */
+/** Writes OCR artifact locations back into the ASIN-level metadata file. */
 async function updateChunkMetadata(options: {
-  metadataPath: string;
+  asin: string;
   chunkId: string;
   pagesDir: string;
   combinedTextPath: string | null;
 }): Promise<void> {
-  const { metadataPath, chunkId, pagesDir, combinedTextPath } = options;
-  const metadata = await readChunkMetadata(metadataPath);
+  const { asin, chunkId, pagesDir, combinedTextPath } = options;
+  const metadata = await readBookMetadata(asin);
   if (!metadata) {
     return;
   }
@@ -212,14 +212,12 @@ async function updateChunkMetadata(options: {
     return;
   }
 
-  const now = new Date().toISOString();
   targetRange.artifacts.pngDir = pagesDir;
   targetRange.artifacts.pagesDir = pagesDir;
   targetRange.artifacts.combinedTextPath = combinedTextPath ?? undefined;
-  metadata.updatedAt = now;
-  targetRange.updatedAt = now;
+  targetRange.updatedAt = new Date().toISOString();
 
-  await writeChunkMetadata(metadataPath, metadata);
+  await upsertRange(asin, targetRange);
 }
 
 /** Parses the OCR pipeline stdout payload into structured JSON. */

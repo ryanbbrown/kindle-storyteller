@@ -15,15 +15,14 @@ import type { Kindle } from "kindle-api";
 import { log } from "../logger.js";
 
 import { env } from "../config/env.js";
-import { writeChunkMetadata } from "./chunk-metadata-service.js";
+import { getOrCreateBookMetadata, upsertRange } from "./chunk-metadata-service.js";
 import type {
   CoverageRange,
   RendererCoverageMetadata,
+  TtsProvider,
 } from "../types/chunk-metadata.js";
 
 const execFileAsync = promisify(execFile);
-
-const METADATA_FILENAME = "metadata.json";
 
 export type RendererConfigInput = {
   startingPosition: number | string;
@@ -42,16 +41,17 @@ export type ChunkArtifacts = {
   pagesDir: string;
   combinedTextPath: string;
   contentTarPath: string;
-  audioPath?: string;
-  audioAlignmentPath?: string;
-  audioBenchmarksPath?: string;
+  audio?: Partial<Record<TtsProvider, {
+    audioPath: string;
+    alignmentPath: string;
+    benchmarksPath: string;
+  }>>;
 };
 
 export type EnsureChunkDownloadedResult = {
   asin: string;
   chunkId: string;
   chunkDir: string;
-  metadataPath: string;
   chunkMetadata: RendererCoverageMetadata;
   artifacts: ChunkArtifacts;
 };
@@ -134,7 +134,6 @@ async function downloadFreshChunk(options: {
   await fs.rename(stagingTar, finalTarPath);
   await fs.rename(stagingExtractDir, finalExtractDir);
 
-  const metadataPath = path.join(chunkDir, METADATA_FILENAME);
   const now = new Date().toISOString();
 
   const range: CoverageRange = {
@@ -151,20 +150,14 @@ async function downloadFreshChunk(options: {
     updatedAt: now,
   };
 
-  const chunkMetadata: RendererCoverageMetadata = {
-    asin,
-    updatedAt: now,
-    ranges: [range],
-  };
-
-  await writeChunkMetadata(metadataPath, chunkMetadata);
+  await upsertRange(asin, range);
+  const chunkMetadata = await getOrCreateBookMetadata(asin);
 
   try {
     return {
       asin,
       chunkId,
       chunkDir,
-      metadataPath,
       chunkMetadata,
       artifacts: resolveArtifacts(range, chunkDir),
     };
@@ -212,9 +205,7 @@ export function resolveArtifacts(
     pagesDir: range.artifacts.pagesDir ?? range.artifacts.pngDir ?? defaultPagesDir,
     combinedTextPath: range.artifacts.combinedTextPath ?? defaultCombined,
     contentTarPath: range.artifacts.contentTarPath ?? defaultTar,
-    audioPath: range.artifacts.audioPath,
-    audioAlignmentPath: range.artifacts.audioAlignmentPath,
-    audioBenchmarksPath: range.artifacts.audioBenchmarksPath,
+    audio: range.artifacts.audio,
   };
 }
 

@@ -72,6 +72,7 @@ final class ContentViewModel: ObservableObject {
             try await configurePlayer(
                 asin: response.asin,
                 chunkId: response.chunkId,
+                provider: selectedAudioProvider,
                 title: sessionStore.bookDetails?.title ?? "Kindle Audio Preview",
                 coverImageURL: sessionStore.bookDetails?.coverImage
             )
@@ -129,7 +130,7 @@ final class ContentViewModel: ObservableObject {
     func deleteAudiobook(_ entry: AudiobookEntry) async {
         do {
             let client = try makeClient()
-            try await client.deleteAudiobook(asin: entry.asin, chunkId: entry.chunkId)
+            try await client.deleteAudiobook(asin: entry.asin, chunkId: entry.chunkId, provider: entry.ttsProvider)
             audiobooks.removeAll { $0.id == entry.id }
             log("Deleted audiobook: \(entry.bookTitle ?? entry.asin)")
         } catch {
@@ -145,6 +146,7 @@ final class ContentViewModel: ObservableObject {
             try await configurePlayer(
                 asin: entry.asin,
                 chunkId: entry.chunkId,
+                provider: entry.ttsProvider,
                 title: entry.bookTitle ?? "Kindle Audio Preview",
                 coverImageURL: entry.coverImage
             )
@@ -189,11 +191,11 @@ final class ContentViewModel: ObservableObject {
     // MARK: - Private
 
     /** Downloads audio and benchmarks, then configures the playback coordinator. */
-    private func configurePlayer(asin: String, chunkId: String, title: String, coverImageURL: String?) async throws {
+    private func configurePlayer(asin: String, chunkId: String, provider: String, title: String, coverImageURL: String?) async throws {
         let client = try makeClient()
 
-        let fileURL = try await client.downloadChunkAudio(asin: asin, chunkId: chunkId)
-        let benchmarks = try await client.fetchBenchmarks(asin: asin, chunkId: chunkId)
+        let fileURL = try await client.downloadChunkAudio(asin: asin, chunkId: chunkId, provider: provider)
+        let benchmarks = try await client.fetchBenchmarks(asin: asin, chunkId: chunkId, provider: provider)
         let timeline = BenchmarkTimeline(response: benchmarks)
 
         downloadedAudioURL = fileURL

@@ -1,5 +1,7 @@
 export type IsoDateTime = string;
 
+export type TtsProvider = "cartesia" | "elevenlabs";
+
 export interface RangeBound {
   positionId: number;
 }
@@ -10,14 +12,19 @@ export interface RangePagesMetadata {
   indexEnd?: number;
 }
 
+export interface ProviderAudioArtifacts {
+  audioPath: string;
+  alignmentPath: string;
+  benchmarksPath: string;
+}
+
 export interface RangeArtifacts {
   extractDir: string;
   pngDir?: string;
   combinedTextPath?: string;
   pagesDir?: string;
-  audioPath?: string;
   contentTarPath?: string;
-  [key: string]: string | undefined;
+  audio?: Partial<Record<TtsProvider, ProviderAudioArtifacts>>;
 }
 
 export interface CoverageRange {

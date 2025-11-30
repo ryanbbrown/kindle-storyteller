@@ -2,13 +2,11 @@
  * Shared utilities for TTS audio generation services.
  * Used by both elevenlabs-audio.ts and cartesia-audio.ts.
  */
-import fs from "node:fs/promises";
-
 import {
-  readChunkMetadata,
-  writeChunkMetadata,
+  readBookMetadata,
+  upsertRange,
 } from "../chunk-metadata-service.js";
-import type { RendererCoverageMetadata } from "../../types/chunk-metadata.js";
+import type { TtsProvider } from "../../types/chunk-metadata.js";
 import type { ChunkAudioSummary } from "../../types/audio.js";
 
 /** Normalizes whitespace and tracks original indices for each character. */
@@ -123,34 +121,32 @@ export function buildBenchmarkTimeline(
 
 /** Stores the generated audio artifacts back onto the chunk metadata record. */
 export async function recordChunkAudioArtifacts(options: {
-  metadataPath: string;
-  metadata?: RendererCoverageMetadata;
+  asin: string;
   chunkId: string;
+  provider: TtsProvider;
   summary: ChunkAudioSummary;
-}): Promise<RendererCoverageMetadata | undefined> {
-  const {
-    metadataPath,
-    metadata: providedMetadata,
-    chunkId,
-    summary,
-  } = options;
-  const metadata =
-    providedMetadata ?? (await readChunkMetadata(metadataPath));
+}): Promise<void> {
+  const { asin, chunkId, provider, summary } = options;
+  const metadata = await readBookMetadata(asin);
   if (!metadata) {
-    return undefined;
+    return;
   }
 
   const targetRange = metadata.ranges.find((range) => range.id === chunkId);
   if (!targetRange) {
-    return metadata;
+    return;
   }
 
-  targetRange.artifacts.audioPath = summary.audioPath;
-  targetRange.artifacts.audioAlignmentPath = summary.alignmentPath;
-  targetRange.artifacts.audioBenchmarksPath = summary.benchmarksPath;
-  const now = new Date().toISOString();
-  metadata.updatedAt = now;
-  targetRange.updatedAt = now;
-  await writeChunkMetadata(metadataPath, metadata);
-  return metadata;
+  if (!targetRange.artifacts.audio) {
+    targetRange.artifacts.audio = {};
+  }
+
+  targetRange.artifacts.audio[provider] = {
+    audioPath: summary.audioPath,
+    alignmentPath: summary.alignmentPath,
+    benchmarksPath: summary.benchmarksPath,
+  };
+
+  targetRange.updatedAt = new Date().toISOString();
+  await upsertRange(asin, targetRange);
 }

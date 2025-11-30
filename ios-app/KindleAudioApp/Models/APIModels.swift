@@ -95,7 +95,7 @@ struct EmptyResponse: Decodable {
 // MARK: - Audiobooks
 
 struct AudiobookEntry: Codable, Identifiable {
-    var id: String { "\(asin)_\(chunkId)" }
+    var id: String { "\(asin)_\(chunkId)_\(ttsProvider)" }
     let asin: String
     let chunkId: String
     let bookTitle: String?

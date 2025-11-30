@@ -132,9 +132,9 @@ export async function generateChunkPreviewAudio(
 
   const audioDir = path.join(chunkDir, "audio");
   await fs.mkdir(audioDir, { recursive: true });
-  const audioPath = path.join(audioDir, "audio.mp3");
-  const alignmentPath = path.join(audioDir, "alignment.json");
-  const benchmarksPath = path.join(audioDir, "benchmarks.json");
+  const audioPath = path.join(audioDir, "elevenlabs-audio.mp3");
+  const alignmentPath = path.join(audioDir, "elevenlabs-alignment.json");
+  const benchmarksPath = path.join(audioDir, "elevenlabs-benchmarks.json");
 
   // Persist audio + metadata that downstream services expect.
   await fs.writeFile(audioPath, audioBuffer);
