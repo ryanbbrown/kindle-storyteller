@@ -139,7 +139,7 @@ async function runOcrCommand(args: string[]): Promise<PipelineSummary> {
   try {
     const { stdout } = await execFileAsync(
       "uv",
-      ["run", "python", "pipeline.py", ...args],
+      ["run", "-m", "text_extraction.cli", ...args],
       {
         cwd: textExtractionDir,
         env: process.env,
