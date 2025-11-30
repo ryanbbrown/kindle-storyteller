@@ -4,7 +4,7 @@ import path from "node:path";
 import type { FastifyInstance } from "fastify";
 
 import { env } from "../config/env.js";
-import { readBookMetadata } from "../services/chunk-metadata-service.js";
+import { readBookMetadata, upsertRange } from "../services/chunk-metadata-service.js";
 import type { TtsProvider } from "../types/chunk-metadata.js";
 
 type AudiobookEntry = {
@@ -15,6 +15,8 @@ type AudiobookEntry = {
   startPercent: number;
   durationSeconds: number;
   ttsProvider: TtsProvider;
+  audioStartPositionId: number;
+  audioEndPositionId: number;
 };
 
 type BookInfo = {
@@ -32,6 +34,8 @@ type DeleteParams = {
 
 type DeleteQuery = {
   provider: TtsProvider;
+  startPosition: string;
+  endPosition: string;
 };
 
 /** Registers routes for listing generated audiobooks. */
@@ -48,6 +52,8 @@ export async function registerAudiobooksRoutes(
   app.delete<{ Params: DeleteParams; Querystring: DeleteQuery }>("/audiobooks/:asin/:chunkId", async (request, reply) => {
     const { asin, chunkId } = request.params;
     const provider = request.query.provider;
+    const startPosition = request.query.startPosition ? parseInt(request.query.startPosition, 10) : undefined;
+    const endPosition = request.query.endPosition ? parseInt(request.query.endPosition, 10) : undefined;
 
     if (!provider || (provider !== "cartesia" && provider !== "elevenlabs")) {
       return reply
@@ -55,20 +61,55 @@ export async function registerAudiobooksRoutes(
         .send({ message: "provider query param is required (cartesia or elevenlabs)" } as never);
     }
 
-    request.log.info({ asin, chunkId, provider }, "Deleting audiobook");
+    if (startPosition === undefined || endPosition === undefined) {
+      return reply
+        .status(400)
+        .send({ message: "startPosition and endPosition query params are required" } as never);
+    }
 
-    const audioDir = path.join(env.storageDir, asin, "chunks", chunkId, "audio");
+    request.log.info({ asin, chunkId, provider, startPosition, endPosition }, "Deleting audiobook");
 
     try {
-      const files = [
-        `${provider}-audio.mp3`,
-        `${provider}-alignment.json`,
-        `${provider}-benchmarks.json`,
-      ];
-      await Promise.all(
-        files.map((f) => fs.rm(path.join(audioDir, f), { force: true }))
+      // Find and remove from metadata
+      const metadata = await readBookMetadata(asin);
+      if (!metadata) {
+        return reply.status(404).send({ message: "Book metadata not found" } as never);
+      }
+
+      const range = metadata.ranges.find((r) => r.id === chunkId);
+      if (!range) {
+        return reply.status(404).send({ message: "Chunk not found" } as never);
+      }
+
+      const artifacts = range.artifacts.audio?.[provider];
+      if (!artifacts || !Array.isArray(artifacts)) {
+        return reply.status(404).send({ message: "Audio artifacts not found" } as never);
+      }
+
+      // Find the specific artifact by position range
+      const artifactIndex = artifacts.findIndex(
+        (a) => a.startPositionId === startPosition && a.endPositionId === endPosition
       );
-      request.log.info({ asin, chunkId, provider }, "Audiobook deleted");
+
+      if (artifactIndex === -1) {
+        return reply.status(404).send({ message: "Audio artifact not found" } as never);
+      }
+
+      const artifact = artifacts[artifactIndex];
+
+      // Delete the files
+      await Promise.all([
+        fs.rm(artifact.audioPath, { force: true }),
+        fs.rm(artifact.alignmentPath, { force: true }),
+        fs.rm(artifact.benchmarksPath, { force: true }),
+      ]);
+
+      // Remove from metadata
+      artifacts.splice(artifactIndex, 1);
+      range.updatedAt = new Date().toISOString();
+      await upsertRange(asin, range);
+
+      request.log.info({ asin, chunkId, provider, startPosition, endPosition }, "Audiobook deleted");
       return reply.status(204).send();
     } catch (error) {
       request.log.error({ err: error, asin, chunkId, provider }, "Failed to delete audiobook");
@@ -100,29 +141,34 @@ async function scanAudiobooks(): Promise<AudiobookEntry[]> {
     for (const range of metadata.ranges) {
       if (!range.artifacts.audio) continue;
 
-      for (const [provider, audio] of Object.entries(range.artifacts.audio)) {
-        if (!audio?.benchmarksPath) continue;
+      for (const [provider, artifacts] of Object.entries(range.artifacts.audio)) {
+        if (!artifacts || !Array.isArray(artifacts)) continue;
 
-        try {
-          const raw = await fs.readFile(audio.benchmarksPath, "utf8");
-          const benchmarks = JSON.parse(raw);
+        for (const audio of artifacts) {
+          if (!audio?.benchmarksPath) continue;
 
-          const startPositionId = range.start.positionId;
-          const startPercent = bookInfo?.length
-            ? (startPositionId / bookInfo.length) * 100
-            : 0;
+          try {
+            const raw = await fs.readFile(audio.benchmarksPath, "utf8");
+            const benchmarks = JSON.parse(raw);
 
-          entries.push({
-            asin,
-            chunkId: range.id,
-            bookTitle: bookInfo?.title ?? null,
-            coverImage: bookInfo?.coverImage ?? null,
-            startPercent,
-            durationSeconds: benchmarks.totalDurationSeconds ?? 0,
-            ttsProvider: provider as TtsProvider,
-          });
-        } catch {
-          // Benchmarks file missing or invalid, skip
+            const startPercent = bookInfo?.length
+              ? (audio.startPositionId / bookInfo.length) * 100
+              : 0;
+
+            entries.push({
+              asin,
+              chunkId: range.id,
+              bookTitle: bookInfo?.title ?? null,
+              coverImage: bookInfo?.coverImage ?? null,
+              startPercent,
+              durationSeconds: benchmarks.totalDurationSeconds ?? 0,
+              ttsProvider: provider as TtsProvider,
+              audioStartPositionId: audio.startPositionId,
+              audioEndPositionId: audio.endPositionId,
+            });
+          } catch {
+            // Benchmarks file missing or invalid, skip
+          }
         }
       }
     }

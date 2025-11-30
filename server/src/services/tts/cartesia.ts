@@ -12,10 +12,12 @@ const execFileAsync = promisify(execFile);
 
 import {
   normalizeTextWithMap,
-  computeSentenceSliceLength,
+  computeTextStartIndex,
+  computeTextSliceForDuration,
   buildCharToPositionIdMap,
   computeProportionalEndPosition,
   buildBenchmarkTimeline,
+  MAX_DURATION_MINUTES,
 } from "./utils.js";
 import { transformTextForTTS } from "../llm.js";
 import type {
@@ -37,7 +39,7 @@ type CartesiaSSEEvent =
 export async function generateChunkPreviewAudio(
   options: GenerateChunkAudioOptions,
 ): Promise<ChunkAudioSummary> {
-  const { asin, chunkId, chunkDir, range, combinedTextPath, skipLlmPreprocessing } = options;
+  const { asin, chunkId, chunkDir, range, combinedTextPath, skipLlmPreprocessing, durationMinutes = MAX_DURATION_MINUTES, requestedStartPositionId } = options;
 
   const config = getCartesiaAudioConfig();
 
@@ -46,12 +48,22 @@ export async function generateChunkPreviewAudio(
   const { normalized: normalizedText, map: normalizedMap } =
     normalizeTextWithMap(rawText);
 
-  const sliceLength = computeSentenceSliceLength(
-    normalizedText,
-    config.sentenceTarget,
-  );
-  const textForTts = normalizedText.slice(0, sliceLength);
-  const charToOriginalIndex = normalizedMap.slice(0, sliceLength);
+  // Calculate where to start slicing based on user's requested position
+  const textStartIndex = computeTextStartIndex({
+    textLength: normalizedText.length,
+    chunkStartPositionId: range.start.positionId,
+    chunkEndPositionId: range.end.positionId,
+    requestedStartPositionId: requestedStartPositionId ?? range.start.positionId,
+  });
+
+  // Slice text based on requested duration from the start index
+  const sliceLength = computeTextSliceForDuration({
+    text: normalizedText,
+    startIndex: textStartIndex,
+    durationMinutes,
+  });
+  const textForTts = normalizedText.slice(textStartIndex, textStartIndex + sliceLength);
+  const charToOriginalIndex = normalizedMap.slice(textStartIndex, textStartIndex + sliceLength);
 
   if (!textForTts.trim()) {
     throw new Error(
@@ -62,16 +74,19 @@ export async function generateChunkPreviewAudio(
   const { audioBuffer, wordTimestamps, totalDurationSeconds } =
     await callCartesiaTTS(textForTts, config);
 
+  // Calculate actual start position based on where we're slicing from
+  const actualStartPositionId = requestedStartPositionId ?? range.start.positionId;
+
   const proportionalEndPositionId = computeProportionalEndPosition({
     processedTextLength: textForTts.length,
-    fullTextLength: normalizedText.length,
-    startPositionId: range.start.positionId,
+    fullTextLength: normalizedText.length - textStartIndex,
+    startPositionId: actualStartPositionId,
     endPositionId: range.end.positionId,
   });
 
   const charToKindlePositionId = buildCharToPositionIdMap({
     textLength: charToOriginalIndex.length,
-    startPositionId: range.start.positionId,
+    startPositionId: actualStartPositionId,
     endPositionId: proportionalEndPositionId,
   });
 
@@ -88,10 +103,10 @@ export async function generateChunkPreviewAudio(
 
   const audioDir = path.join(chunkDir, "audio");
   await fs.mkdir(audioDir, { recursive: true });
-  const wavPath = path.join(audioDir, "cartesia-audio.wav");
-  const audioPath = path.join(audioDir, "cartesia-audio.mp3");
-  const alignmentPath = path.join(audioDir, "cartesia-alignment.json");
-  const benchmarksPath = path.join(audioDir, "cartesia-benchmarks.json");
+  const wavPath = path.join(audioDir, `cartesia-audio-${actualStartPositionId}-${proportionalEndPositionId}.wav`);
+  const audioPath = path.join(audioDir, `cartesia-audio-${actualStartPositionId}-${proportionalEndPositionId}.mp3`);
+  const alignmentPath = path.join(audioDir, `cartesia-alignment-${actualStartPositionId}-${proportionalEndPositionId}.json`);
+  const benchmarksPath = path.join(audioDir, `cartesia-benchmarks-${actualStartPositionId}-${proportionalEndPositionId}.json`);
 
   await fs.writeFile(wavPath, audioBuffer);
   await execFileAsync("ffmpeg", ["-y", "-i", wavPath, "-codec:a", "libmp3lame", "-qscale:a", "2", audioPath]);
@@ -103,7 +118,7 @@ export async function generateChunkPreviewAudio(
     voiceId: config.voiceId,
     modelId: config.modelId,
     outputFormat: config.outputFormat,
-    chunkStartPositionId: range.start.positionId,
+    chunkStartPositionId: actualStartPositionId,
     textLength: textForTts.length,
     totalDurationSeconds,
     charToKindlePositionId,
@@ -138,10 +153,13 @@ export async function generateChunkPreviewAudio(
     audioPath,
     alignmentPath,
     benchmarksPath,
+    sourceTextPath: skipLlmPreprocessing ? combinedTextPath : cartesiaContentPath,
     textLength: textForTts.length,
     totalDurationSeconds,
     benchmarkIntervalSeconds: config.benchmarkIntervalSeconds,
     ttsProvider: "cartesia" as const,
+    startPositionId: actualStartPositionId,
+    endPositionId: proportionalEndPositionId,
   };
 }
 

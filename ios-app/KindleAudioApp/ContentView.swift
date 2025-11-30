@@ -6,9 +6,8 @@ struct ContentView: View {
     @State private var appScreen: AppScreen = .home
     @State private var isPresentingLogin = false
     @State private var webViewReloadCounter = 0
-    @State private var showLoginHint = false
-    @State private var hasShownLoginHint = false
     @State private var isGenerationComplete = false
+    @State private var durationMinutes: Int = 8
 
     init(sessionStore: SessionStore) {
         self.sessionStore = sessionStore
@@ -26,6 +25,9 @@ struct ContentView: View {
                         bookDetails: sessionStore.bookDetails,
                         selectedProvider: $viewModel.selectedAudioProvider,
                         llmPreprocessing: $viewModel.useLlmPreprocessing,
+                        durationMinutes: $durationMinutes,
+                        useManualPosition: $viewModel.useManualStartingPosition,
+                        manualPosition: $viewModel.manualStartingPosition,
                         onGenerate: startGeneration
                     )
                 case .loading:
@@ -88,7 +90,7 @@ struct ContentView: View {
         isGenerationComplete = false
         appScreen = .loading
         Task {
-            await viewModel.generateAudiobook()
+            await viewModel.generateAudiobook(durationMinutes: durationMinutes)
             isGenerationComplete = true
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             appScreen = .player
@@ -153,7 +155,6 @@ struct ContentView: View {
                     }
                 }
             }
-            .overlay(loginHintOverlay)
             .alert(item: $viewModel.activeAlert) { alert in
                 Alert(
                     title: Text(alert.title),
@@ -161,53 +162,6 @@ struct ContentView: View {
                     dismissButton: .default(Text("OK"))
                 )
             }
-        }
-        .onAppear {
-            if !hasShownLoginHint {
-                hasShownLoginHint = true
-                showLoginHint = true
-                Task {
-                    try? await Task.sleep(nanoseconds: 3_000_000_000)
-                    withAnimation {
-                        showLoginHint = false
-                    }
-                }
-            }
-        }
-        .onDisappear {
-            showLoginHint = false
-        }
-    }
-
-    @ViewBuilder
-    private var loginHintOverlay: some View {
-        if showLoginHint {
-            VStack(spacing: 12) {
-                Text("Log in and open the book you want to make an audiobook for")
-                    .font(.body)
-                    .multilineTextAlignment(.center)
-
-                Button(action: {
-                    withAnimation {
-                        showLoginHint = false
-                    }
-                }) {
-                    Text("Got it")
-                        .font(.subheadline.bold())
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 8)
-                        .background(Color.gray.opacity(0.6))
-                        .cornerRadius(8)
-                }
-            }
-            .padding()
-            .background(Color.black.opacity(0.85))
-            .foregroundColor(.white)
-            .cornerRadius(12)
-            .padding()
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .transition(.move(edge: .top).combined(with: .opacity))
         }
     }
 }

@@ -14,10 +14,13 @@ export type ChunkAudioSummary = {
   audioPath: string;
   alignmentPath: string;
   benchmarksPath: string;
+  sourceTextPath: string;
   textLength: number;
   totalDurationSeconds: number;
   benchmarkIntervalSeconds: number;
   ttsProvider: "cartesia" | "elevenlabs";
+  startPositionId: number;
+  endPositionId: number;
 };
 
 export type GenerateChunkAudioOptions = {
@@ -30,6 +33,8 @@ export type GenerateChunkAudioOptions = {
   };
   combinedTextPath: string;
   skipLlmPreprocessing?: boolean;
+  durationMinutes?: number;
+  requestedStartPositionId?: number;
 };
 
 export type WordTimestamps = {

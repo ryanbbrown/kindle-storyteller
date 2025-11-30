@@ -41,20 +41,35 @@ struct APIClient {
         )
     }
 
-    func fetchBenchmarks(asin: String, chunkId: String, provider: String) async throws -> BenchmarkResponse {
+    func fetchBenchmarks(asin: String, chunkId: String, provider: String, startPosition: Int? = nil, endPosition: Int? = nil) async throws -> BenchmarkResponse {
         let encodedASIN = asin.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? asin
         let encodedChunk = chunkId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? chunkId
+        var queryItems = "provider=\(provider)"
+        if let start = startPosition {
+            queryItems += "&startPosition=\(start)"
+        }
+        if let end = endPosition {
+            queryItems += "&endPosition=\(end)"
+        }
         return try await send(
-            path: "books/\(encodedASIN)/chunks/\(encodedChunk)/benchmarks?provider=\(provider)",
+            path: "books/\(encodedASIN)/chunks/\(encodedChunk)/benchmarks?\(queryItems)",
             method: "GET"
         )
     }
 
-    func downloadChunkAudio(asin: String, chunkId: String, provider: String) async throws -> URL {
+    func downloadChunkAudio(asin: String, chunkId: String, provider: String, startPosition: Int? = nil, endPosition: Int? = nil) async throws -> URL {
         let encodedASIN = asin.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? asin
         let encodedChunk = chunkId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? chunkId
 
-        guard let url = URL(string: "books/\(encodedASIN)/chunks/\(encodedChunk)/audio?provider=\(provider)", relativeTo: baseURL)?.absoluteURL else {
+        var queryItems = "provider=\(provider)"
+        if let start = startPosition {
+            queryItems += "&startPosition=\(start)"
+        }
+        if let end = endPosition {
+            queryItems += "&endPosition=\(end)"
+        }
+
+        guard let url = URL(string: "books/\(encodedASIN)/chunks/\(encodedChunk)/audio?\(queryItems)", relativeTo: baseURL)?.absoluteURL else {
             throw APIError(statusCode: -1, message: "Invalid audio URL")
         }
 
@@ -97,11 +112,11 @@ struct APIClient {
     }
 
     /** Deletes an audiobook from the server. */
-    func deleteAudiobook(asin: String, chunkId: String, provider: String) async throws {
+    func deleteAudiobook(asin: String, chunkId: String, provider: String, startPosition: Int, endPosition: Int) async throws {
         let encodedASIN = asin.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? asin
         let encodedChunk = chunkId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? chunkId
         let _: EmptyResponse = try await send(
-            path: "audiobooks/\(encodedASIN)/\(encodedChunk)?provider=\(provider)",
+            path: "audiobooks/\(encodedASIN)/\(encodedChunk)?provider=\(provider)&startPosition=\(startPosition)&endPosition=\(endPosition)",
             method: "DELETE"
         )
     }

@@ -12,6 +12,10 @@ struct BookDetails {
     }
 
     var currentPositionLabel: String {
-        return "\(currentPosition) / \(length)"
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        let currentFormatted = formatter.string(from: NSNumber(value: currentPosition)) ?? "\(currentPosition)"
+        let lengthFormatted = formatter.string(from: NSNumber(value: length)) ?? "\(length)"
+        return "\(currentFormatted) / \(lengthFormatted)"
     }
 }

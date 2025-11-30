@@ -17,6 +17,7 @@ import { log } from "../logger.js";
 import { env } from "../config/env.js";
 import { getOrCreateBookMetadata, upsertRange } from "./chunk-metadata-service.js";
 import type {
+  AudioArtifact,
   CoverageRange,
   RendererCoverageMetadata,
   TtsProvider,
@@ -41,11 +42,7 @@ export type ChunkArtifacts = {
   pagesDir: string;
   combinedTextPath: string;
   contentTarPath: string;
-  audio?: Partial<Record<TtsProvider, {
-    audioPath: string;
-    alignmentPath: string;
-    benchmarksPath: string;
-  }>>;
+  audio?: Partial<Record<TtsProvider, AudioArtifact[]>>;
 };
 
 export type EnsureChunkDownloadedResult = {

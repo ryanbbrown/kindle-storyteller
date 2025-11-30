@@ -24,7 +24,8 @@ final class PlaybackCoordinator: ObservableObject {
         audioURL: URL,
         title: String,
         coverImageURL: String? = nil,
-        timeline: BenchmarkTimeline
+        timeline: BenchmarkTimeline,
+        initialSeekTime: TimeInterval = 0
     ) {
         scheduler?.stop()
         scheduler = nil
@@ -32,6 +33,9 @@ final class PlaybackCoordinator: ObservableObject {
         currentTitle = title
         currentCoverImageURL = coverImageURL
         audioController.load(url: audioURL, title: title, coverImageURL: coverImageURL)
+        if initialSeekTime > 0 {
+            audioController.seekTo(initialSeekTime)
+        }
     }
 
     func configure(
@@ -41,7 +45,8 @@ final class PlaybackCoordinator: ObservableObject {
         timeline: BenchmarkTimeline,
         client: APIClient,
         sessionId: String,
-        asin: String
+        asin: String,
+        initialSeekTime: TimeInterval = 0
     ) {
         scheduler?.stop()
         isSyncDisabled = false
@@ -66,6 +71,9 @@ final class PlaybackCoordinator: ObservableObject {
         }
 
         audioController.load(url: audioURL, title: title, coverImageURL: coverImageURL)
+        if initialSeekTime > 0 {
+            audioController.seekTo(initialSeekTime)
+        }
     }
 
     func play() {

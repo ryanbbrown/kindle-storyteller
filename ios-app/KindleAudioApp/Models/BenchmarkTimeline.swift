@@ -17,4 +17,18 @@ extension BenchmarkTimeline {
             BenchmarkTimeline.Checkpoint(time: entry.timeSeconds, kindlePositionIdStart: entry.kindlePositionIdStart)
         }
     }
+
+    /** Finds the seek time for a given position ID, biasing towards earlier timestamps to avoid skipping content. */
+    func seekTime(forPositionId targetPositionId: Int) -> TimeInterval {
+        // Find the last checkpoint at or before the target position
+        var bestCheckpoint: Checkpoint?
+        for checkpoint in checkpoints {
+            if checkpoint.kindlePositionIdStart <= targetPositionId {
+                bestCheckpoint = checkpoint
+            } else {
+                break
+            }
+        }
+        return bestCheckpoint?.time ?? 0
+    }
 }

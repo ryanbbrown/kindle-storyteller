@@ -13,6 +13,8 @@ type BenchmarkParams = {
 
 type BenchmarkQuery = {
   provider: TtsProvider;
+  startPosition: string;
+  endPosition: string;
 };
 
 /** Registers routes that expose benchmark checkpoints for a chunk. */
@@ -23,6 +25,8 @@ export async function registerBenchmarkRoutes(app: FastifyInstance): Promise<voi
       const asin = request.params.asin?.trim();
       const chunkId = request.params.chunkId?.trim();
       const provider = request.query.provider;
+      const startPosition = parseInt(request.query.startPosition, 10);
+      const endPosition = parseInt(request.query.endPosition, 10);
 
       if (!asin || !chunkId) {
         return reply
@@ -38,10 +42,16 @@ export async function registerBenchmarkRoutes(app: FastifyInstance): Promise<voi
           .send({ message: "provider query param is required (cartesia or elevenlabs)" } as never);
       }
 
-      request.log.debug({ asin, chunkId, provider }, "Fetching benchmarks");
+      if (!Number.isFinite(startPosition) || !Number.isFinite(endPosition)) {
+        return reply
+          .status(400)
+          .send({ message: "startPosition and endPosition query params are required" } as never);
+      }
+
+      request.log.debug({ asin, chunkId, provider, startPosition, endPosition }, "Fetching benchmarks");
 
       try {
-        const payload = await openBenchmarkPayload(asin, chunkId, provider);
+        const payload = await openBenchmarkPayload(asin, chunkId, provider, startPosition, endPosition);
         return reply.status(200).send(payload);
       } catch (error) {
         if ((error as { statusCode?: number }).statusCode === 404) {

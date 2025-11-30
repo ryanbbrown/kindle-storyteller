@@ -116,15 +116,34 @@ struct LibraryScreen: View {
                     .font(.subheadline.weight(.medium))
                     .lineLimit(2)
 
-                HStack(spacing: 12) {
-                    Label(String(format: "%.1f%%", entry.startPercent), systemImage: "book")
-                    Label(formatDuration(entry.durationSeconds), systemImage: "clock")
-                    Label(entry.ttsProvider, systemImage: "waveform")
+                HStack {
+                    HStack(spacing: 4) {
+                        Image(systemName: "book")
+                        Text(formatPositionRange(entry))
+                    }
+                    Spacer()
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock")
+                        Text(formatDuration(entry.durationSeconds))
+                    }
+                    Spacer()
+                    HStack(spacing: 4) {
+                        Image(systemName: "waveform")
+                        Text(entry.ttsProvider)
+                    }
                 }
+                .lineLimit(1)
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private func formatPositionRange(_ entry: AudiobookEntry) -> String {
+        let percent = Int(entry.startPercent)
+        let startK = Double(entry.audioStartPositionId) / 1000.0
+        let endK = Double(entry.audioEndPositionId) / 1000.0
+        return String(format: "%d%% (%.1fk–%.1fk)", percent, startK, endK)
     }
 
     private func formatDuration(_ seconds: Double) -> String {

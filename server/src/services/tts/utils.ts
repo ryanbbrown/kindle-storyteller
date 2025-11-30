@@ -35,28 +35,63 @@ export function normalizeTextWithMap(input: string): {
   return { normalized, map };
 }
 
-/** Picks a slice length that ends on the target sentence count. */
-export function computeSentenceSliceLength(
-  text: string,
-  targetSentences: number,
-): number {
-  const cap = Math.max(1, text.length);
-  if (!Number.isFinite(targetSentences) || targetSentences <= 0) {
+export const MAX_DURATION_MINUTES = 8;
+
+/** Computes text slice start index based on position offset within the chunk's range. */
+export function computeTextStartIndex(options: {
+  textLength: number;
+  chunkStartPositionId: number;
+  chunkEndPositionId: number;
+  requestedStartPositionId: number;
+}): number {
+  const { textLength, chunkStartPositionId, chunkEndPositionId, requestedStartPositionId } = options;
+
+  // If requested start is at or before chunk start, start from beginning
+  if (requestedStartPositionId <= chunkStartPositionId) {
+    return 0;
+  }
+
+  // If requested start is at or after chunk end, return end (will produce empty slice)
+  if (requestedStartPositionId >= chunkEndPositionId) {
+    return textLength;
+  }
+
+  // Calculate proportional offset into the text
+  const chunkSpan = chunkEndPositionId - chunkStartPositionId;
+  const offsetIntoChunk = requestedStartPositionId - chunkStartPositionId;
+  const proportionalIndex = Math.round(textLength * (offsetIntoChunk / chunkSpan));
+
+  return Math.min(proportionalIndex, textLength);
+}
+
+/** Computes text slice length for the requested duration, ending at a sentence boundary. */
+export function computeTextSliceForDuration(options: {
+  text: string;
+  startIndex: number;
+  durationMinutes: number;
+}): number {
+  const { text, startIndex, durationMinutes } = options;
+  const remainingText = text.slice(startIndex);
+  const cap = Math.max(1, remainingText.length);
+
+  if (durationMinutes >= MAX_DURATION_MINUTES) {
     return cap;
   }
 
-  let sentences = 0;
-  for (let index = 0; index < cap; index += 1) {
-    const char = text[index];
+  // Duration is proportional to full chunk (8 min), so calculate target length accordingly
+  const targetLength = Math.round(text.length * (durationMinutes / MAX_DURATION_MINUTES));
+
+  // Find nearest sentence ending at or before targetLength in the remaining text
+  let lastSentenceEnd = -1;
+  for (let index = 0; index < targetLength && index < cap; index += 1) {
+    const char = remainingText[index];
     if (char === "." || char === "!" || char === "?") {
-      sentences += 1;
-      if (sentences >= targetSentences) {
-        return index + 1;
-      }
+      lastSentenceEnd = index + 1;
     }
   }
 
-  return cap;
+  // If no sentence boundary found, return target length (fallback)
+  return lastSentenceEnd > 0 ? lastSentenceEnd : Math.min(targetLength, cap);
 }
 
 /** Builds a linear mapping from character indices to Kindle position IDs. */
@@ -141,12 +176,21 @@ export async function recordChunkAudioArtifacts(options: {
     targetRange.artifacts.audio = {};
   }
 
-  targetRange.artifacts.audio[provider] = {
+  if (!targetRange.artifacts.audio[provider]) {
+    targetRange.artifacts.audio[provider] = [];
+  }
+
+  const artifact = {
     audioPath: summary.audioPath,
     alignmentPath: summary.alignmentPath,
     benchmarksPath: summary.benchmarksPath,
+    sourceTextPath: summary.sourceTextPath,
+    startPositionId: summary.startPositionId,
+    endPositionId: summary.endPositionId,
+    createdAt: new Date().toISOString(),
   };
 
+  targetRange.artifacts.audio[provider]!.push(artifact);
   targetRange.updatedAt = new Date().toISOString();
   await upsertRange(asin, targetRange);
 }

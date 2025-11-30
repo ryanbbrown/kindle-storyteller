@@ -8,7 +8,6 @@ export type CartesiaAudioConfig = {
   };
   speed: number;
   benchmarkIntervalSeconds: number;
-  sentenceTarget: number;
 };
 
 let cachedAudioConfig: CartesiaAudioConfig | undefined;
@@ -18,7 +17,6 @@ const BENCHMARK_INTERVAL_SECONDS = 5;
 const DEFAULT_VOICE_ID = "f786b574-daa5-4673-aa0c-cbe3e8534c02";
 const DEFAULT_MODEL_ID = "sonic-3";
 const DEFAULT_SPEED = 0.9;
-export const CARTESIA_SENTENCE_TARGET = 25;
 
 /** Returns the cached Cartesia configuration derived from environment defaults. */
 export function getCartesiaAudioConfig(): CartesiaAudioConfig {
@@ -36,7 +34,6 @@ export function getCartesiaAudioConfig(): CartesiaAudioConfig {
     },
     speed: DEFAULT_SPEED,
     benchmarkIntervalSeconds: BENCHMARK_INTERVAL_SECONDS,
-    sentenceTarget: CARTESIA_SENTENCE_TARGET,
   };
 
   return cachedAudioConfig;

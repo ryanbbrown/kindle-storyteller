@@ -16,6 +16,7 @@ type PipelineBody = {
   startingPosition?: number | string;
   audioProvider: "cartesia" | "elevenlabs";
   skipLlmPreprocessing?: boolean;
+  durationMinutes?: number;
 };
 
 type PipelineResponse = ChunkPipelineState;
@@ -56,8 +57,15 @@ export async function registerPipelineRoutes(
         .send({ message: "audioProvider must be 'cartesia' or 'elevenlabs'" } as never);
     }
 
+    const durationMinutes = request.body?.durationMinutes;
+    if (durationMinutes !== undefined && (durationMinutes < 1 || durationMinutes > 8)) {
+      return reply
+        .status(400)
+        .send({ message: "durationMinutes must be between 1 and 8" } as never);
+    }
+
     request.log.info(
-      { asin, startingPosition, audioProvider },
+      { asin, startingPosition, audioProvider, durationMinutes },
       "Starting chunk pipeline"
     );
 
@@ -69,6 +77,7 @@ export async function registerPipelineRoutes(
       startingPosition,
       audioProvider,
       skipLlmPreprocessing,
+      durationMinutes,
     };
 
     try {

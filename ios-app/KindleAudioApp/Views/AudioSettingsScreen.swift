@@ -4,7 +4,12 @@ struct AudioSettingsScreen: View {
     var bookDetails: BookDetails?
     @Binding var selectedProvider: String
     @Binding var llmPreprocessing: Bool
+    @Binding var durationMinutes: Int
+    @Binding var useManualPosition: Bool
+    @Binding var manualPosition: String
     var onGenerate: () -> Void
+
+    @State private var showInfoPopover = false
 
     var body: some View {
         ScrollView {
@@ -84,12 +89,29 @@ struct AudioSettingsScreen: View {
 
     private var settingsCard: some View {
         VStack(spacing: 24) {
-            Text("Audio Settings")
-                .font(.title2.bold())
+            HStack {
+                Color.clear.frame(width: 22)
+                Spacer()
+                Text("Audio Settings")
+                    .font(.title2.bold())
+                Spacer()
+                Button(action: { showInfoPopover = true }) {
+                    Image(systemName: "info.circle")
+                        .font(.title3)
+                        .foregroundColor(.secondary)
+                }
+                .popover(isPresented: $showInfoPopover) {
+                    infoPopoverContent
+                }
+            }
 
             providerPicker
 
+            durationSlider
+
             Toggle("LLM preprocessing", isOn: $llmPreprocessing)
+
+            manualPositionSection
 
             Button(action: onGenerate) {
                 Label("Generate Audiobook", systemImage: "waveform.badge.plus")
@@ -141,5 +163,91 @@ struct AudioSettingsScreen: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Color.gray.opacity(0.3), lineWidth: 1)
         )
+    }
+
+    private var durationSlider: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text("Duration")
+                    .font(.subheadline)
+                Spacer()
+                Text("\(durationMinutes) minute\(durationMinutes == 1 ? "" : "s")")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(.accentColor)
+            }
+
+            Slider(
+                value: Binding(
+                    get: { Double(durationMinutes) },
+                    set: { durationMinutes = Int($0.rounded()) }
+                ),
+                in: 1...8,
+                step: 1
+            )
+            .tint(.accentColor)
+
+            HStack {
+                Text("1 min")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("8 min")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var manualPositionSection: some View {
+        VStack(spacing: 12) {
+            Toggle("Manual position", isOn: $useManualPosition)
+
+            if useManualPosition {
+                TextField("Position ID", text: $manualPosition)
+                    .keyboardType(.numberPad)
+                    .textFieldStyle(.roundedBorder)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: useManualPosition)
+    }
+
+    private var infoPopoverContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Provider")
+                    .font(.headline)
+                Text("ElevenLabs generates quicker but is lower quality than Cartesia.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Duration")
+                    .font(.headline)
+                Text("This is approximate. A full \"chunk\" is ~8 minutes; adjusting the slider will take a proportion of the chunk.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("LLM Preprocessing")
+                    .font(.headline)
+                Text("This is the longest step, if switched on. More impactful for Cartesia, as it can insert pauses.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Manual Position")
+                    .font(.headline)
+                Text("Override the starting position. Use this to generate audio ahead of where you are, or to re-generate from a specific location.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(20)
+        .frame(width: 300)
+        .presentationCompactAdaptation(.popover)
     }
 }

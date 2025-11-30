@@ -3,11 +3,13 @@ export { generateChunkPreviewAudio as generateElevenLabsAudio } from "./elevenla
 export { generateChunkPreviewAudio as generateCartesiaAudio } from "./cartesia.js";
 export {
   normalizeTextWithMap,
-  computeSentenceSliceLength,
+  computeTextStartIndex,
+  computeTextSliceForDuration,
   buildCharToPositionIdMap,
   computeProportionalEndPosition,
   buildBenchmarkTimeline,
   recordChunkAudioArtifacts,
+  MAX_DURATION_MINUTES,
 } from "./utils.js";
 export type {
   BenchmarkEntry,

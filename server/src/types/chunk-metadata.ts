@@ -12,10 +12,14 @@ export interface RangePagesMetadata {
   indexEnd?: number;
 }
 
-export interface ProviderAudioArtifacts {
+export interface AudioArtifact {
   audioPath: string;
   alignmentPath: string;
   benchmarksPath: string;
+  sourceTextPath: string;
+  startPositionId: number;
+  endPositionId: number;
+  createdAt: IsoDateTime;
 }
 
 export interface RangeArtifacts {
@@ -24,7 +28,7 @@ export interface RangeArtifacts {
   combinedTextPath?: string;
   pagesDir?: string;
   contentTarPath?: string;
-  audio?: Partial<Record<TtsProvider, ProviderAudioArtifacts>>;
+  audio?: Partial<Record<TtsProvider, AudioArtifact[]>>;
 }
 
 export interface CoverageRange {

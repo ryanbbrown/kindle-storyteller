@@ -6,8 +6,8 @@ struct LoadingScreen: View {
 
     private var statusSteps: [(message: String, duration: TimeInterval)] {
         var steps: [(String, TimeInterval)] = [
-            ("Downloading book content...", 2.0),
-            ("Processing glyphs...", 2.0),
+            ("Preparing to generate audiobook...", 2.0),
+            ("Processing book content...", 2.0),
         ]
         if useLlmPreprocessing {
             steps.append(("Running LLM preprocessing...", 15.0))

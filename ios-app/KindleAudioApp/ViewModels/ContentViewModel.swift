@@ -29,7 +29,7 @@ final class ContentViewModel: ObservableObject {
     }
 
     /** Generates audiobook audio for the current book position. */
-    func generateAudiobook() async {
+    func generateAudiobook(durationMinutes: Int = 8) async {
         guard let metadata = validateBookMetadata() else { return }
         guard validateSessionInputs() else { return }
 
@@ -42,14 +42,15 @@ final class ContentViewModel: ObservableObject {
             resetAudioPlaybackState()
             defer { isGeneratingAudiobook = false }
 
-            log("Starting pipeline for \(asin) at position \(startingPosition)...")
+            log("Starting pipeline for \(asin) at position \(startingPosition) (\(durationMinutes) min)...")
             let sessionId = try await sessionService.ensureSession(client: client)
             log(sessionService.hasSession ? "Reusing existing session." : "Session created: \(sessionId)")
 
             let request = PipelineRequest(
                 startingPosition: startingPosition,
                 audioProvider: selectedAudioProvider,
-                skipLlmPreprocessing: !useLlmPreprocessing
+                skipLlmPreprocessing: !useLlmPreprocessing,
+                durationMinutes: durationMinutes
             )
             let response = try await client.runPipeline(sessionId: sessionId, asin: asin, request: request)
             latestPipeline = response
@@ -74,7 +75,10 @@ final class ContentViewModel: ObservableObject {
                 chunkId: response.chunkId,
                 provider: selectedAudioProvider,
                 title: sessionStore.bookDetails?.title ?? "Kindle Audio Preview",
-                coverImageURL: sessionStore.bookDetails?.coverImage
+                coverImageURL: sessionStore.bookDetails?.coverImage,
+                startPosition: response.audioStartPositionId,
+                endPosition: response.audioEndPositionId,
+                userRequestedPosition: Int(startingPosition)
             )
             log("Audio ready for playback.")
         } catch {
@@ -130,7 +134,13 @@ final class ContentViewModel: ObservableObject {
     func deleteAudiobook(_ entry: AudiobookEntry) async {
         do {
             let client = try makeClient()
-            try await client.deleteAudiobook(asin: entry.asin, chunkId: entry.chunkId, provider: entry.ttsProvider)
+            try await client.deleteAudiobook(
+                asin: entry.asin,
+                chunkId: entry.chunkId,
+                provider: entry.ttsProvider,
+                startPosition: entry.audioStartPositionId,
+                endPosition: entry.audioEndPositionId
+            )
             audiobooks.removeAll { $0.id == entry.id }
             log("Deleted audiobook: \(entry.bookTitle ?? entry.asin)")
         } catch {
@@ -142,13 +152,25 @@ final class ContentViewModel: ObservableObject {
     func playAudiobook(_ entry: AudiobookEntry) async {
         resetAudioPlaybackState()
         log("Loading: \(entry.bookTitle ?? entry.asin)...")
+
+        // Use current Kindle position if it falls within the audio range
+        var userPosition: Int? = nil
+        if let currentPos = sessionStore.startingPosition?.trimmedNonEmpty(), let posInt = Int(currentPos) {
+            if posInt >= entry.audioStartPositionId && posInt <= entry.audioEndPositionId {
+                userPosition = posInt
+            }
+        }
+
         do {
             try await configurePlayer(
                 asin: entry.asin,
                 chunkId: entry.chunkId,
                 provider: entry.ttsProvider,
                 title: entry.bookTitle ?? "Kindle Audio Preview",
-                coverImageURL: entry.coverImage
+                coverImageURL: entry.coverImage,
+                startPosition: entry.audioStartPositionId,
+                endPosition: entry.audioEndPositionId,
+                userRequestedPosition: userPosition
             )
             log("Loaded audiobook")
         } catch {
@@ -191,15 +213,23 @@ final class ContentViewModel: ObservableObject {
     // MARK: - Private
 
     /** Downloads audio and benchmarks, then configures the playback coordinator. */
-    private func configurePlayer(asin: String, chunkId: String, provider: String, title: String, coverImageURL: String?) async throws {
+    private func configurePlayer(asin: String, chunkId: String, provider: String, title: String, coverImageURL: String?, startPosition: Int? = nil, endPosition: Int? = nil, userRequestedPosition: Int? = nil) async throws {
         let client = try makeClient()
 
-        let fileURL = try await client.downloadChunkAudio(asin: asin, chunkId: chunkId, provider: provider)
-        let benchmarks = try await client.fetchBenchmarks(asin: asin, chunkId: chunkId, provider: provider)
+        let fileURL = try await client.downloadChunkAudio(asin: asin, chunkId: chunkId, provider: provider, startPosition: startPosition, endPosition: endPosition)
+        let benchmarks = try await client.fetchBenchmarks(asin: asin, chunkId: chunkId, provider: provider, startPosition: startPosition, endPosition: endPosition)
         let timeline = BenchmarkTimeline(response: benchmarks)
 
         downloadedAudioURL = fileURL
         benchmarkTimeline = timeline
+
+        // Calculate initial seek time if user's position is after audio start
+        let initialSeekTime: TimeInterval
+        if let userPos = userRequestedPosition, let audioStart = startPosition, userPos > audioStart {
+            initialSeekTime = timeline.seekTime(forPositionId: userPos)
+        } else {
+            initialSeekTime = 0
+        }
 
         let hasGuid = sessionStore.guid?.trimmedNonEmpty() != nil
         if hasGuid {
@@ -211,14 +241,16 @@ final class ContentViewModel: ObservableObject {
                 timeline: timeline,
                 client: client,
                 sessionId: sessionId,
-                asin: asin
+                asin: asin,
+                initialSeekTime: initialSeekTime
             )
         } else {
             playbackCoordinator.configure(
                 audioURL: fileURL,
                 title: title,
                 coverImageURL: coverImageURL,
-                timeline: timeline
+                timeline: timeline,
+                initialSeekTime: initialSeekTime
             )
         }
     }

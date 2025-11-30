@@ -31,6 +31,7 @@ struct PipelineRequest: Encodable {
     let startingPosition: String
     let audioProvider: String
     let skipLlmPreprocessing: Bool
+    let durationMinutes: Int?
 }
 
 struct PipelineResponse: Decodable, Equatable {
@@ -40,6 +41,8 @@ struct PipelineResponse: Decodable, Equatable {
     let positionRange: PositionRange
     let artifactsDir: String
     let audioDurationSeconds: Double?
+    let audioStartPositionId: Int?
+    let audioEndPositionId: Int?
 }
 
 struct PositionRange: Decodable, Equatable {
@@ -95,7 +98,7 @@ struct EmptyResponse: Decodable {
 // MARK: - Audiobooks
 
 struct AudiobookEntry: Codable, Identifiable {
-    var id: String { "\(asin)_\(chunkId)_\(ttsProvider)" }
+    var id: String { "\(asin)_\(chunkId)_\(ttsProvider)_\(audioStartPositionId)_\(audioEndPositionId)" }
     let asin: String
     let chunkId: String
     let bookTitle: String?
@@ -103,6 +106,8 @@ struct AudiobookEntry: Codable, Identifiable {
     let startPercent: Double
     let durationSeconds: Double
     let ttsProvider: String
+    let audioStartPositionId: Int
+    let audioEndPositionId: Int
 }
 
 // MARK: - Errors

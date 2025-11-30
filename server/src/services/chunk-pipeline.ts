@@ -30,10 +30,18 @@ import { readBookMetadata } from "./chunk-metadata-service.js";
 import { openBenchmarkPayload } from "../utils/benchmarks.js";
 import { env } from "../config/env.js";
 import type {
+  AudioArtifact,
   CoverageRange,
   RendererCoverageMetadata,
   TtsProvider,
 } from "../types/chunk-metadata.js";
+import {
+  MAX_DURATION_MINUTES,
+  computeTextStartIndex,
+  computeTextSliceForDuration,
+  computeProportionalEndPosition,
+  normalizeTextWithMap,
+} from "./tts/utils.js";
 
 type PipelineStep = "download" | "ocr" | "llm" | "audio";
 
@@ -43,6 +51,7 @@ export type RunChunkPipelineOptions = {
   startingPosition: number | string;
   audioProvider: "cartesia" | "elevenlabs";
   skipLlmPreprocessing?: boolean;
+  durationMinutes?: number;
 };
 
 export type ChunkPipelinePositionRange = {
@@ -57,6 +66,8 @@ export type ChunkPipelineState = {
   positionRange: ChunkPipelinePositionRange;
   artifactsDir: string;
   audioDurationSeconds?: number;
+  audioStartPositionId?: number;
+  audioEndPositionId?: number;
 };
 
 const MIN_EXISTING_RANGE_REMAINING_POSITIONS = 3000;
@@ -68,16 +79,18 @@ export async function runChunkPipeline(
   const DEFAULT_RENDER_NUM_PAGES = 5;
   const DEFAULT_RENDER_SKIP_PAGES = 0;
   const DEFAULT_OCR_MAX_PAGES = 5;
+  const durationMinutes = options.durationMinutes ?? MAX_DURATION_MINUTES;
 
-  log.debug({ asin: options.asin, startingPosition: options.startingPosition }, "Determining pipeline steps");
+  log.debug({ asin: options.asin, startingPosition: options.startingPosition, durationMinutes }, "Determining pipeline steps");
   const plan = await determineSteps({
     asin: options.asin,
     startingPosition: options.startingPosition,
     audioProvider: options.audioProvider,
     skipLlmPreprocessing: options.skipLlmPreprocessing ?? false,
+    durationMinutes,
   });
   log.debug(
-    { needsDownload: plan.needsDownload, needsOcr: plan.needsOcr, needsLlm: plan.needsLlm, needsAudio: plan.needsAudio },
+    { needsDownload: plan.needsDownload, needsOcr: plan.needsOcr, needsLlm: plan.needsLlm, needsAudio: plan.needsAudio, hasExistingAudio: !!plan.existingAudioArtifact },
     "Pipeline plan determined"
   );
 
@@ -158,9 +171,15 @@ export async function runChunkPipeline(
 
   let audioResult: ChunkAudioSummary | undefined;
   let audioDurationSeconds: number | undefined;
+  let audioStartPositionId: number | undefined;
+  let audioEndPositionId: number | undefined;
   const shouldRunAudio = plan.needsAudio || shouldRunLlm;
   if (shouldRunAudio && targetRange) {
-    log.info({ chunkId: activeChunk.chunkId, provider: options.audioProvider }, "Generating audio");
+    // Parse the user's requested starting position
+    const rawStart = String(options.startingPosition ?? "").trim();
+    const requestedStartPositionId = Number.parseInt(rawStart, 10);
+
+    log.info({ chunkId: activeChunk.chunkId, provider: options.audioProvider, durationMinutes, requestedStartPositionId }, "Generating audio");
     executedSteps.push("audio");
     const generateAudio = options.audioProvider === "elevenlabs"
       ? generateElevenLabsAudio
@@ -172,6 +191,8 @@ export async function runChunkPipeline(
       range: targetRange,
       combinedTextPath,
       skipLlmPreprocessing: true, // LLM step already ran if needed
+      durationMinutes,
+      requestedStartPositionId: Number.isFinite(requestedStartPositionId) ? requestedStartPositionId : undefined,
     });
 
     await recordChunkAudioArtifacts({
@@ -184,21 +205,37 @@ export async function runChunkPipeline(
     if (!activeChunk.artifacts.audio) {
       activeChunk.artifacts.audio = {};
     }
-    activeChunk.artifacts.audio[options.audioProvider] = {
+    if (!activeChunk.artifacts.audio[options.audioProvider]) {
+      activeChunk.artifacts.audio[options.audioProvider] = [];
+    }
+    activeChunk.artifacts.audio[options.audioProvider]!.push({
       audioPath: audioResult.audioPath,
       alignmentPath: audioResult.alignmentPath,
       benchmarksPath: audioResult.benchmarksPath,
-    };
+      sourceTextPath: audioResult.sourceTextPath,
+      startPositionId: audioResult.startPositionId,
+      endPositionId: audioResult.endPositionId,
+      createdAt: new Date().toISOString(),
+    });
     audioDurationSeconds = audioResult.totalDurationSeconds;
-    log.info({ durationSeconds: audioDurationSeconds }, "Audio generation complete");
+    audioStartPositionId = audioResult.startPositionId;
+    audioEndPositionId = audioResult.endPositionId;
+    log.info({ durationSeconds: audioDurationSeconds, startPositionId: audioStartPositionId, endPositionId: audioEndPositionId }, "Audio generation complete");
+  } else if (plan.existingAudioArtifact) {
+    // Reuse existing audio artifact
+    audioStartPositionId = plan.existingAudioArtifact.startPositionId;
+    audioEndPositionId = plan.existingAudioArtifact.endPositionId;
+    log.info({ startPositionId: audioStartPositionId, endPositionId: audioEndPositionId }, "Reusing existing audio artifact");
   }
 
-  if (audioDurationSeconds === undefined) {
+  if (audioDurationSeconds === undefined && audioStartPositionId !== undefined && audioEndPositionId !== undefined) {
     try {
       const benchmarks = await openBenchmarkPayload(
         activeChunk.asin,
         activeChunk.chunkId,
         options.audioProvider,
+        audioStartPositionId,
+        audioEndPositionId,
       );
       audioDurationSeconds = benchmarks.totalDurationSeconds;
     } catch {
@@ -217,9 +254,9 @@ export async function runChunkPipeline(
     steps: executedSteps,
     positionRange,
     artifactsDir: activeChunk.artifacts.extractDir,
-    ...(audioDurationSeconds !== undefined
-      ? { audioDurationSeconds }
-      : {}),
+    ...(audioDurationSeconds !== undefined ? { audioDurationSeconds } : {}),
+    ...(audioStartPositionId !== undefined ? { audioStartPositionId } : {}),
+    ...(audioEndPositionId !== undefined ? { audioEndPositionId } : {}),
   };
 }
 
@@ -254,6 +291,7 @@ type StepPlan = {
   needsLlm: boolean;
   needsAudio: boolean;
   existing?: LoadedChunk;
+  existingAudioArtifact?: AudioArtifact;
 };
 
 type ExistingChunk = {
@@ -269,6 +307,7 @@ async function determineSteps(options: {
   startingPosition: number | string;
   audioProvider: "cartesia" | "elevenlabs";
   skipLlmPreprocessing: boolean;
+  durationMinutes: number;
 }): Promise<StepPlan> {
   const rawStart = String(options.startingPosition ?? "").trim();
   const requestPositionId = Number.parseInt(rawStart, 10);
@@ -308,27 +347,99 @@ async function determineSteps(options: {
     };
   }
 
-  // Check if provider-specific LLM-preprocessed content exists
+  // Determine which source text file we'd use
   const providerContentPath = path.join(
     existing.chunkDir,
     `${options.audioProvider}-content.txt`
   );
+  const sourceTextPath = options.skipLlmPreprocessing
+    ? artifacts.combinedTextPath
+    : providerContentPath;
+
   const hasLlmContent = options.skipLlmPreprocessing
     ? true
     : await statMatches(providerContentPath, (stats) => stats.isFile());
 
-  const providerAudio = artifacts.audio?.[options.audioProvider];
-  const hasAudio = providerAudio?.audioPath
-    ? await statMatches(providerAudio.audioPath, (stats) => stats.isFile())
-    : false;
+  // Compute exact end position by reading the text (same logic as TTS)
+  let exactEndPosition: number | undefined;
+  try {
+    const rawText = await fs.readFile(sourceTextPath, "utf8");
+    const { normalized: normalizedText } = normalizeTextWithMap(rawText);
+
+    const textStartIndex = computeTextStartIndex({
+      textLength: normalizedText.length,
+      chunkStartPositionId: existing.range.start.positionId,
+      chunkEndPositionId: existing.range.end.positionId,
+      requestedStartPositionId: requestPositionId,
+    });
+
+    const sliceLength = computeTextSliceForDuration({
+      text: normalizedText,
+      startIndex: textStartIndex,
+      durationMinutes: options.durationMinutes,
+    });
+
+    exactEndPosition = computeProportionalEndPosition({
+      processedTextLength: textStartIndex + sliceLength,
+      fullTextLength: normalizedText.length,
+      startPositionId: existing.range.start.positionId,
+      endPositionId: existing.range.end.positionId,
+    });
+  } catch {
+    // Text file doesn't exist, can't compute exact position
+  }
+
+  // Check for existing audio that covers the requested range
+  const existingAudioArtifact = exactEndPosition !== undefined
+    ? await findCoveringAudioArtifact({
+        artifacts,
+        provider: options.audioProvider,
+        sourceTextPath,
+        startPositionId: requestPositionId,
+        endPositionId: exactEndPosition,
+      })
+    : undefined;
 
   return {
     needsDownload: false,
     needsOcr: false,
     needsLlm: !hasLlmContent,
-    needsAudio: !hasAudio,
+    needsAudio: !existingAudioArtifact,
     existing: loaded,
+    existingAudioArtifact,
   };
+}
+
+/** Finds an existing audio artifact that fully covers the requested position range and matches source text. */
+async function findCoveringAudioArtifact(options: {
+  artifacts: ChunkArtifacts;
+  provider: TtsProvider;
+  sourceTextPath: string;
+  startPositionId: number;
+  endPositionId: number;
+}): Promise<AudioArtifact | undefined> {
+  const { artifacts, provider, sourceTextPath, startPositionId, endPositionId } = options;
+  const providerArtifacts = artifacts.audio?.[provider];
+  if (!providerArtifacts) {
+    return undefined;
+  }
+
+  for (const artifact of providerArtifacts) {
+    // Must match source text (LLM-preprocessed vs raw)
+    if (artifact.sourceTextPath !== sourceTextPath) {
+      continue;
+    }
+    // Check if this artifact fully covers the requested range
+    if (artifact.startPositionId <= startPositionId && artifact.endPositionId >= endPositionId) {
+      // Verify file exists
+      const exists = await statMatches(artifact.audioPath, (stats) => stats.isFile());
+      if (exists) {
+        return artifact;
+      }
+    }
+  }
+
+  return undefined;
 }
 
 /** Finds a chunk in data/books/[asin] covering the requested start offset, if it exists. */
