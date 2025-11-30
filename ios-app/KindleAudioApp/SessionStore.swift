@@ -75,4 +75,12 @@ final class SessionStore: ObservableObject {
             self.bookDetails = details
         }
     }
+
+    func clearBookSelection() {
+        DispatchQueue.main.async {
+            self.asin = nil
+            self.startingPosition = nil
+            self.bookDetails = nil
+        }
+    }
 }

@@ -25,6 +25,13 @@
 		REFACTOR005 /* StringExtensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = REFACTOR105 /* StringExtensions.swift */; };
 		REFACTOR006 /* SessionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = REFACTOR106 /* SessionService.swift */; };
 		REFACTOR007 /* ContentViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = REFACTOR107 /* ContentViewModel.swift */; };
+		VIEWS001 /* HomeScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWS101 /* HomeScreen.swift */; };
+		VIEWS002 /* AudioSettingsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWS102 /* AudioSettingsScreen.swift */; };
+		VIEWS003 /* LoadingScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWS103 /* LoadingScreen.swift */; };
+		VIEWS004 /* PlayerScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWS104 /* PlayerScreen.swift */; };
+		VIEWS005 /* LibraryScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWS105 /* LibraryScreen.swift */; };
+		NAV001 /* AppNavigation.swift in Sources */ = {isa = PBXBuildFile; fileRef = NAV101 /* AppNavigation.swift */; };
+		VIEWS006 /* TabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = VIEWS106 /* TabBar.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -50,6 +57,13 @@
 		REFACTOR105 /* StringExtensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StringExtensions.swift; sourceTree = "<group>"; };
 		REFACTOR106 /* SessionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionService.swift; sourceTree = "<group>"; };
 		REFACTOR107 /* ContentViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentViewModel.swift; sourceTree = "<group>"; };
+		VIEWS101 /* HomeScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeScreen.swift; sourceTree = "<group>"; };
+		VIEWS102 /* AudioSettingsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSettingsScreen.swift; sourceTree = "<group>"; };
+		VIEWS103 /* LoadingScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadingScreen.swift; sourceTree = "<group>"; };
+		VIEWS104 /* PlayerScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerScreen.swift; sourceTree = "<group>"; };
+		VIEWS105 /* LibraryScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryScreen.swift; sourceTree = "<group>"; };
+		NAV101 /* AppNavigation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppNavigation.swift; sourceTree = "<group>"; };
+		VIEWS106 /* TabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabBar.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -92,6 +106,7 @@
 				REFACTOR202 /* Services */,
 				REFACTOR203 /* Shared */,
 				REFACTOR205 /* ViewModels */,
+				VIEWS201 /* Views */,
 			);
 			path = KindleAudioApp;
 			sourceTree = "<group>";
@@ -118,8 +133,22 @@
 				REFACTOR101 /* APIModels.swift */,
 				REFACTOR102 /* BookDetails.swift */,
 				REFACTOR103 /* BenchmarkTimeline.swift */,
+				NAV101 /* AppNavigation.swift */,
 			);
 			path = Models;
+			sourceTree = "<group>";
+		};
+		VIEWS201 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				VIEWS101 /* HomeScreen.swift */,
+				VIEWS102 /* AudioSettingsScreen.swift */,
+				VIEWS103 /* LoadingScreen.swift */,
+				VIEWS104 /* PlayerScreen.swift */,
+				VIEWS105 /* LibraryScreen.swift */,
+				VIEWS106 /* TabBar.swift */,
+			);
+			path = Views;
 			sourceTree = "<group>";
 		};
 		REFACTOR202 /* Services */ = {
@@ -241,6 +270,13 @@
 				REFACTOR005 /* StringExtensions.swift in Sources */,
 				REFACTOR006 /* SessionService.swift in Sources */,
 				REFACTOR007 /* ContentViewModel.swift in Sources */,
+				VIEWS001 /* HomeScreen.swift in Sources */,
+				VIEWS002 /* AudioSettingsScreen.swift in Sources */,
+				VIEWS003 /* LoadingScreen.swift in Sources */,
+				VIEWS004 /* PlayerScreen.swift in Sources */,
+				VIEWS005 /* LibraryScreen.swift in Sources */,
+				NAV001 /* AppNavigation.swift in Sources */,
+				VIEWS006 /* TabBar.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
