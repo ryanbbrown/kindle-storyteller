@@ -41,33 +41,20 @@ struct APIClient {
         )
     }
 
-    func fetchBenchmarks(asin: String, chunkId: String, provider: String, startPosition: Int? = nil, endPosition: Int? = nil) async throws -> BenchmarkResponse {
+    func fetchBenchmarks(asin: String, chunkId: String, provider: String, startPosition: Int, endPosition: Int) async throws -> BenchmarkResponse {
         let encodedASIN = asin.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? asin
         let encodedChunk = chunkId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? chunkId
-        var queryItems = "provider=\(provider)"
-        if let start = startPosition {
-            queryItems += "&startPosition=\(start)"
-        }
-        if let end = endPosition {
-            queryItems += "&endPosition=\(end)"
-        }
+        let queryItems = "provider=\(provider)&startPosition=\(startPosition)&endPosition=\(endPosition)"
         return try await send(
             path: "books/\(encodedASIN)/chunks/\(encodedChunk)/benchmarks?\(queryItems)",
             method: "GET"
         )
     }
 
-    func downloadChunkAudio(asin: String, chunkId: String, provider: String, startPosition: Int? = nil, endPosition: Int? = nil) async throws -> URL {
+    func downloadChunkAudio(asin: String, chunkId: String, provider: String, startPosition: Int, endPosition: Int) async throws -> URL {
         let encodedASIN = asin.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? asin
         let encodedChunk = chunkId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? chunkId
-
-        var queryItems = "provider=\(provider)"
-        if let start = startPosition {
-            queryItems += "&startPosition=\(start)"
-        }
-        if let end = endPosition {
-            queryItems += "&endPosition=\(end)"
-        }
+        let queryItems = "provider=\(provider)&startPosition=\(startPosition)&endPosition=\(endPosition)"
 
         guard let url = URL(string: "books/\(encodedASIN)/chunks/\(encodedChunk)/audio?\(queryItems)", relativeTo: baseURL)?.absoluteURL else {
             throw APIError(statusCode: -1, message: "Invalid audio URL")

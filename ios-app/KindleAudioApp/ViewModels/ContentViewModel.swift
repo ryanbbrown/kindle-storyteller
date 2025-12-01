@@ -64,7 +64,9 @@ final class ContentViewModel: ObservableObject {
                 log("Pipeline finished. chunkId=\(response.chunkId)")
             }
 
-            guard response.audioDurationSeconds != nil else {
+            guard response.audioDurationSeconds != nil,
+                  let audioStart = response.audioStartPositionId,
+                  let audioEnd = response.audioEndPositionId else {
                 log("Audio is not available from this pipeline run.")
                 return
             }
@@ -76,8 +78,8 @@ final class ContentViewModel: ObservableObject {
                 provider: selectedAudioProvider,
                 title: sessionStore.bookDetails?.title ?? "Kindle Audio Preview",
                 coverImageURL: sessionStore.bookDetails?.coverImage,
-                startPosition: response.audioStartPositionId,
-                endPosition: response.audioEndPositionId,
+                startPosition: audioStart,
+                endPosition: audioEnd,
                 userRequestedPosition: Int(startingPosition)
             )
             log("Audio ready for playback.")
@@ -213,7 +215,7 @@ final class ContentViewModel: ObservableObject {
     // MARK: - Private
 
     /** Downloads audio and benchmarks, then configures the playback coordinator. */
-    private func configurePlayer(asin: String, chunkId: String, provider: String, title: String, coverImageURL: String?, startPosition: Int? = nil, endPosition: Int? = nil, userRequestedPosition: Int? = nil) async throws {
+    private func configurePlayer(asin: String, chunkId: String, provider: String, title: String, coverImageURL: String?, startPosition: Int, endPosition: Int, userRequestedPosition: Int? = nil) async throws {
         let client = try makeClient()
 
         let fileURL = try await client.downloadChunkAudio(asin: asin, chunkId: chunkId, provider: provider, startPosition: startPosition, endPosition: endPosition)
@@ -225,7 +227,7 @@ final class ContentViewModel: ObservableObject {
 
         // Calculate initial seek time if user's position is after audio start
         let initialSeekTime: TimeInterval
-        if let userPos = userRequestedPosition, let audioStart = startPosition, userPos > audioStart {
+        if let userPos = userRequestedPosition, userPos > startPosition {
             initialSeekTime = timeline.seekTime(forPositionId: userPos)
         } else {
             initialSeekTime = 0
