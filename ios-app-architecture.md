@@ -1,148 +1,52 @@
-# iOS App Architecture
+# Kindle Audio iOS App
 
-The iOS app is a SwiftUI application that authenticates with Amazon Kindle, captures session tokens via WebView interception, and plays AI-generated audiobooks while syncing progress back to the server.
-
-## Dependencies
-
-Pure Swift/Apple frameworks only - no external dependencies:
-- `SwiftUI` - UI framework
-- `AVFoundation` - Audio playback
-- `MediaPlayer` - Remote media controls (lock screen, control center)
-- `WebKit` - Embedded browser for Amazon login
-- `QuartzCore` - Display link timing for progress sync
+A SwiftUI app that converts Kindle books into audiobooks using the Fastify backend for content extraction and TTS synthesis.
 
 ## File Structure
 
 ```
 ios-app/
-├── KindleAudioApp/
-│   ├── KindleAudioAppApp.swift        # App entry point
-│   ├── ContentView.swift              # Main UI view
-│   ├── Info.plist                     # App configuration
-│   ├── Config.xcconfig                # Build configuration (API host, key)
-│   │
-│   ├── ViewModels/
-│   │   └── ContentViewModel.swift     # Main business logic, orchestrates flows
-│   │
-│   ├── Models/
-│   │   ├── APIModels.swift            # API request/response structures
-│   │   ├── BookDetails.swift          # Book metadata model
-│   │   └── BenchmarkTimeline.swift    # Playback checkpoint timeline
-│   │
-│   ├── Services/
-│   │   └── SessionService.swift       # Session validation and caching
-│   │
-│   ├── SessionStore.swift             # Global state container (tokens, book details)
-│   ├── APIClient.swift                # HTTP client for server communication
-│   ├── AudioPlaybackController.swift  # AVAudioPlayer wrapper with remote controls
-│   ├── PlaybackCoordinator.swift      # Coordinates playback + progress sync
-│   ├── ProgressUpdateScheduler.swift  # CADisplayLink scheduler for progress updates
-│   ├── AudioPlayerCardView.swift      # Audio player UI component
-│   ├── LoginWebView.swift             # WKWebView wrapper for Amazon login
-│   │
-│   ├── Shared/Utilities/
-│   │   ├── StringExtensions.swift     # trimmedNonEmpty() helper
-│   │   └── ValidationError.swift      # Error types and AppAlert
-│   │
-│   └── Resources/
-│       └── webhooks.js                # Injected script for network interception
+├── KindleAudioApp.xcodeproj/          # Xcode project settings
+└── KindleAudioApp/
+    ├── KindleAudioAppApp.swift        # App entry point
+    ├── ContentView.swift              # Root view with tab navigation
+    ├── LoginWebView.swift             # WKWebView for Amazon login, injects JS bridge
+    ├── SessionStore.swift             # Observable state container (cookies, tokens, etc.)
+    ├── APIClient.swift                # REST client for Fastify backend
+    ├── AudioPlaybackController.swift  # AVPlayer wrapper for audio playback
+    ├── PlaybackCoordinator.swift      # Coordinates audio position with Kindle position IDs
+    ├── ProgressUpdateScheduler.swift  # Schedules reading progress syncs to Kindle
+    ├── Models/
+    │   ├── APIModels.swift            # API request/response types
+    │   ├── AppNavigation.swift        # Navigation state and routes
+    │   ├── BenchmarkTimeline.swift    # Maps audio timestamps to Kindle positions
+    │   └── BookDetails.swift          # Book metadata model
+    ├── Views/
+    │   ├── HomeScreen.swift           # Main home tab with current book
+    │   ├── LibraryScreen.swift        # Book library grid
+    │   ├── PlayerScreen.swift         # Full audiobook player UI
+    │   ├── AudioSettingsScreen.swift  # TTS provider and voice settings
+    │   ├── LoadingScreen.swift        # Loading/progress indicator
+    │   └── TabBar.swift               # Bottom tab navigation
+    ├── ViewModels/
+    │   └── ContentViewModel.swift     # Business logic for ContentView
+    ├── Services/
+    │   └── SessionService.swift       # Session management helpers
+    ├── Shared/Utilities/
+    │   ├── StringExtensions.swift     # String helper methods
+    │   └── ValidationError.swift      # Error types
+    └── Resources/
+        └── webhooks.js                # JS injected into web view to capture credentials
 ```
 
 ## Core Flow
 
-### 1. Authentication via WebView Interception
+The app has four tabs: **Connect**, **Generate**, **Listen**, and **Library**.
 
-The app uses a novel approach to capture Amazon Kindle session data:
+1. **Connect** - Tapping "Connect Kindle" opens a `WKWebView` to `read.amazon.com`. The user logs in and selects a book to read. Injected JavaScript (`webhooks.js`) intercepts network requests and extracts cookies, tokens, ASIN, and starting position. Once a book is selected, the sheet dismisses and navigates to Generate.
 
-1. User opens `LoginWebView` which loads `read.amazon.com`
-2. `webhooks.js` is injected at document start
-3. Script intercepts all `fetch()` and `XMLHttpRequest` calls
-4. As user navigates, script captures:
-   - **Cookies** - from document.cookie after login
-   - **Rendering token** - from `/renderer/render` requests
-   - **Device token** - from `/service/web/register/getDeviceToken` responses
-   - **Renderer revision** - from URL parameters
-   - **GUID** - from `/annotations` API calls
-   - **ASIN** - from request parameters when user opens a book
-   - **Starting position** - from render response bodies
+2. **Generate** - Shows the selected book's cover and metadata with audio settings (TTS provider, LLM preprocessing). Tapping "Generate Audiobook" triggers `POST /books/:asin/pipeline` and shows a loading screen while the server runs OCR and TTS.
 
-5. Captured data flows via `webkit.messageHandlers['kindleBridge']` to `SessionStore`
+3. **Listen** - Once generation completes, the app navigates to the Listen tab. Audio is downloaded via `GET /books/:asin/chunks/:chunkId/audio`. During playback, `PlaybackCoordinator` maps audio timestamps to Kindle position IDs using benchmark data, and `ProgressUpdateScheduler` syncs progress back to Kindle via `POST /books/:asin/progress`.
 
-### 2. Audiobook Generation
-
-When user taps "Generate":
-
-```
-Validate tokens (SessionService)
-    ↓
-POST /session → Get server sessionId
-    ↓
-POST /books/:asin/pipeline (startingPosition, audioProvider, skipLlmPreprocessing)
-    ↓
-Server runs: Download → OCR → TTS
-    ↓
-GET /books/:asin/chunks/:chunkId/benchmarks → Playback checkpoints
-    ↓
-GET /books/:asin/chunks/:chunkId/audio → Download MP3 to cache
-    ↓
-Configure PlaybackCoordinator with audio + timeline
-```
-
-### 3. Audio Playback with Progress Sync
-
-The app syncs playback position back to the server at discrete checkpoints:
-
-**AudioPlaybackController:**
-- Wraps `AVAudioPlayer` for MP3 playback
-- Integrates with `MPRemoteCommandCenter` for lock screen controls
-- Updates `MPNowPlayingInfoCenter` with cover art and progress
-
-**ProgressUpdateScheduler:**
-- Uses `CADisplayLink` (60 FPS) for precise timing
-- Compares current playback time to checkpoint array
-- When audio passes a checkpoint, calls `POST /books/:asin/progress`
-- Implements retry with 1-second backoff on failures
-
-## State Management
-
-Uses SwiftUI's reactive patterns with a centralized store:
-
-```
-KindleAudioAppApp
-  └── SessionStore (@StateObject) - source of truth
-      - cookies, tokens, ASIN, bookDetails
-
-ContentView (@ObservedObject)
-  └── ContentViewModel (@StateObject)
-      - UI state (loading, errors, logs)
-      └── PlaybackCoordinator (@Published)
-          ├── AudioPlaybackController - playback state
-          └── ProgressUpdateScheduler - sync state
-```
-
-## API Routes
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/session` | Create authenticated session with Kindle tokens |
-| GET | `/books/:asin/full-details` | Fetch book metadata and cover |
-| POST | `/books/:asin/pipeline` | Generate audiobook chunk |
-| GET | `/books/:asin/chunks/:chunkId/benchmarks` | Get timestamp→position mapping |
-| GET | `/books/:asin/chunks/:chunkId/audio` | Download audio file |
-| POST | `/books/:asin/progress` | Sync reading position to Kindle |
-
-## Configuration
-
-**Config.xcconfig:**
-```
-API_BASE_HOST = localhost:3000
-SERVER_API_KEY = mykey
-```
-
-**Info.plist:**
-- `API_BASE_HOST` - Server host from xcconfig
-- `SERVER_API_KEY` - API key for X-API-Key header
-- `UIBackgroundModes: audio` - Enables background playback
-
-**Environment Override:**
-- `API_BASE_URL` - Overrides xcconfig if set
+4. **Library** - Shows all previously generated audiobooks via `GET /audiobooks`. Users can tap to replay or swipe to delete (`DELETE /audiobooks/:asin/:chunkId`).

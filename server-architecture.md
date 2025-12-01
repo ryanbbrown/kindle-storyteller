@@ -4,9 +4,9 @@ The server is a Fastify API that bridges authenticated Kindle sessions with AI-p
 
 ## Dependencies
 
-The server uses [`kindle-api`](https://github.com/ryanbbrown/kindle-api) (installed from GitHub) to handle all Kindle API interactions including authentication, library fetching, content rendering, and reading progress sync. This abstracts away the low-level HTTP requests and token management.
+The server uses my fork of [`kindle-api`](https://github.com/ryanbbrown/kindle-api) to handle all Kindle API interactions including authentication, library fetching, content rendering, and reading progress sync. This abstracts away the low-level HTTP requests and token management.
 
-## File Structure
+## Core File Structure
 
 ```
 server/
@@ -28,7 +28,6 @@ server/
 │   │   ├── llm.ts            # OpenAI text transformation for TTS
 │   │   ├── chunk-metadata-service.ts  # Reads/writes chunk metadata JSON
 │   │   └── tts/
-│   │       ├── index.ts      # TTS barrel export
 │   │       ├── elevenlabs.ts # ElevenLabs TTS with character timestamps
 │   │       ├── cartesia.ts   # Cartesia TTS alternative
 │   │       └── utils.ts      # Text normalization, benchmark generation
@@ -47,59 +46,92 @@ server/
 └── data/books/               # Generated content storage
 ```
 
+## Data Structure
+
+The `data/books/` directory stores all pipeline-generated artifacts:
+
+```
+data/books/
+├── {asin}/                           # One directory per book (e.g., B01E3PFTXK)
+│   ├── metadata.json                 # ASIN-level metadata with all chunk ranges
+│   └── chunks/
+│       └── chunk_pid_{start}_{end}/  # Chunk named by position ID range
+│           ├── content.tar           # Raw TAR from Kindle renderer
+│           ├── full-content.txt      # OCR-extracted text
+│           ├── extracted/            # Unpacked renderer data
+│           │   ├── metadata.json         # Kindle renderer metadata (title, authors, etc.)
+│           │   ├── glyphs.json           # Glyph/font data (used by OCR)
+│           │   ├── page_data_X_Y.json    # Page positioning (used for position IDs)
+│           │   └── ...                   # Other renderer JSON files
+│           ├── pages/                # Rendered page images
+│           │   ├── page_0000.png
+│           │   ├── page_0001.png
+│           │   └── ...
+│           └── audio/                # Generated audio artifacts
+│               └── {provider}_{startPosId}_{endPosId}/  # Per-provider, per-range
+│                   ├── audio.mp3             # Synthesized audio
+│                   ├── alignment.json        # Character-to-timestamp mapping
+│                   ├── benchmarks.json       # Time-indexed position ID lookups
+│                   └── source-content.txt    # LLM-preprocessed text used for TTS
+```
+
+### ASIN-Level Metadata
+
+The `metadata.json` at the book level tracks all processed chunks and their artifacts:
+
+```typescript
+interface RendererCoverageMetadata {
+  asin: string;
+  updatedAt: IsoDateTime;
+  ranges: CoverageRange[];  // All processed chunks for this book
+}
+
+interface CoverageRange {
+  id: string;                    // e.g., "chunk_pid_91817_100088"
+  start: { positionId: number };
+  end: { positionId: number };
+  pages?: {
+    count: number;
+    indexStart?: number;
+    indexEnd?: number;
+  };
+  artifacts: {
+    extractDir: string;
+    pngDir?: string;
+    pagesDir?: string;
+    combinedTextPath?: string;
+    contentTarPath?: string;
+    audio?: {                    // Provider-specific audio artifact arrays
+      elevenlabs?: AudioArtifact[];
+      cartesia?: AudioArtifact[];
+    };
+  };
+  createdAt: IsoDateTime;
+  updatedAt?: IsoDateTime;
+}
+
+interface AudioArtifact {
+  audioPath: string;
+  alignmentPath: string;
+  benchmarksPath: string;
+  sourceTextPath: string;
+  startPositionId: number;      // Audio covers this position range
+  endPositionId: number;
+  createdAt: IsoDateTime;
+}
+```
+
+This structure allows:
+- Multiple TTS providers to generate audio for the same chunk independently
+- Multiple audio segments per provider with different position ranges (e.g., user generates 3 mins from position 1000, then later generates 5 mins from position 2000)
+
 ## Core Flow
 
-### 1. Session Management
-
-Sessions are created via `POST /session` with Kindle credentials:
-- Cookies, device token, rendering token, renderer revision, and GUID
-- Credentials are passed to `Kindle.fromConfig()` which handles authentication
-- Returns a session ID used in subsequent requests via `X-Session-Id` header
-- Sessions expire after 4 hours (configurable via `SESSION_TTL_MS`)
-- Automatic garbage collection removes expired sessions
-
-### 2. Audiobook Pipeline
-
-The pipeline (`POST /books/:asin/pipeline`) runs up to four stages:
-
-```
-Download → OCR → LLM (optional) → TTS
-```
-
-**Download** (`services/download.ts`):
-- Calls `kindle.renderChunk()` to fetch rendered book pages
-- Extracts the TAR response containing page images and position data
-- Writes chunk metadata with position ID ranges
-
-**OCR** (`services/ocr.ts`):
-- Invokes the `text-extraction` Python pipeline via `uv run python pipeline.py`
-- Extracts text from rendered page images
-- Outputs combined text file (`full-content.txt`)
-
-**LLM** (`services/llm.ts`) - optional:
-- Transforms extracted text for better TTS narration using OpenAI
-- Provider-specific prompts optimize output for ElevenLabs vs Cartesia
-- Outputs provider-specific content file (`{provider}-content.txt`)
-- Skip with `skipLlmPreprocessing: true` in pipeline request
-- Requires `OPENAI_API_KEY` environment variable
-
-**TTS** (`services/tts/*.ts`):
-- Supports ElevenLabs or Cartesia providers (selected per-request)
-- Generates audio with character-level timestamp alignment
-- Creates benchmark entries mapping audio time → Kindle position IDs
-- Enables synchronized reading position updates during playback
-
-### 3. Caching & Artifacts
-
-Content is cached in `data/books/{asin}/chunks/{chunkId}/`:
-- `metadata.json` - chunk position ranges and artifact paths
-- `extracted/` - raw renderer output
-- `pages/` - processed page images
-- `full-content.txt` - extracted text from OCR
-- `{provider}-content.txt` - LLM-preprocessed text (per TTS provider)
-- `audio/audio.mp3` - generated audiobook audio
-- `audio/alignment.json` - character-to-timestamp mapping
-- `audio/benchmarks.json` - time-indexed position lookups
+1. **Session** - Client sends Kindle credentials to `POST /session`, which creates an authenticated session and returns a session ID for subsequent requests
+2. **Download** - `kindle.renderChunk()` fetches rendered book pages as a TAR containing page images and position data
+3. **OCR** - The `text-extraction` Python pipeline extracts text from page images into `full-content.txt`
+4. **LLM** (optional) - OpenAI transforms extracted text for better TTS narration, outputting `{provider}-content.txt`
+5. **TTS** - ElevenLabs or Cartesia generates audio with character-level timestamps for position sync
 
 The pipeline checks for existing artifacts and skips completed stages.
 
@@ -113,6 +145,8 @@ The pipeline checks for existing artifacts and skips completed stages.
 | GET | `/books/:asin/chunks/:chunkId/audio` | Stream audio file |
 | GET | `/books/:asin/chunks/:chunkId/benchmarks` | Get audio timestamp-to-position mapping |
 | POST | `/books/:asin/progress` | Sync reading position to Kindle |
+| GET | `/audiobooks` | List all generated audiobooks |
+| DELETE | `/audiobooks/:asin/:chunkId` | Delete audiobook audio artifacts |
 
 ## Environment Variables
 
