@@ -2,7 +2,7 @@
 
 An iOS app that uses AI to generate on-demand audiobook snippets for Kindle.
 
-[DEMO TO BE ADDED]
+<video src="demo.mp4" width="300"></video>
 
 ## 0.0 Overview
 ### 0.1 Features
