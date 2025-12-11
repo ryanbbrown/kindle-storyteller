@@ -26,7 +26,7 @@ However, I don't normally listen to audiobooks, so I wouldn't want to purchase t
 
 - `ios-app`: SwiftUI client that captures Kindle session info, and drives audiobook genertion, listening, and management. See [ios-app-architecture.md](ios-app-architecture.md).
 - `server`: Fastify backend orchestrating Kindle fetches and text extraction. Uses my fork of [`kindle-api`](https://github.com/ryanbbrown/kindle-api) for Kindle interactions. See [server-architecture.md](server-architecture.md).
-- `text-extraction`: Python pipeline for extracting text from Kindle renderer output.
+- `text-extraction-stubs`: Stub interfaces for the text extraction module (implementation not included).
 - `tls-client-api`: Submoduled TLS proxy binary used by the backend for Amazon requests ([repo](https://github.com/bogdanfinn/tls-client-api)).
 
 ## 2.0 Setup
@@ -77,6 +77,13 @@ The TLS proxy requires Go to build from source:
    cp tls-client-api/cmd/tls-client-api/config.dist.yml tls-client-api/dist/config.yml
    ```
 3. Edit `tls-client-api/dist/config.yml` and add your `TLS_SERVER_API_KEY` to the `api_auth_keys` array.
+
+### 2.4 Text Extraction Setup
+The `text-extraction-stubs` directory contains interface definitions for text extraction functionality. 
+
+**This application requires a working text extraction module that is not included in this repository.**
+
+See `text-extraction-stubs/README.md` for the expected interface and return types.
 
 ## 3.0 Running
 
