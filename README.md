@@ -33,7 +33,7 @@ However, I don't normally listen to audiobooks, so I wouldn't want to purchase t
 
 Clone the repository with submodules:
 ```bash
-git clone --recursive https://github.com/ryanbbrown/kindle-ai-audiobook.git
+git clone --recursive https://github.com/ryanbbrown/kindle-storyteller.git
 ```
 
 ### 2.1 Testing Environments
